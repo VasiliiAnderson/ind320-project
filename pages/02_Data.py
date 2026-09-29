@@ -10,11 +10,26 @@ st.title("Reservoir Data")
 df = load_data()
 
 st.write(
-    "The table below shows the imported Norwegian reservoir dataset."
+    "The table below shows the most relevant variables from the "
+    "Norwegian reservoir dataset."
 )
 
+# Select relevant columns for the main table
+display_columns = [
+    "date",
+    "area_type",
+    "area_number",
+    "iso_year",
+    "iso_week",
+    "fill_level",
+    "capacity_twh",
+    "stored_energy_twh",
+    "previous_week_fill_level",
+    "change_in_fill_level",
+]
+
 st.dataframe(
-    df,
+    df[display_columns],
     use_container_width=True,
     hide_index=True,
 )
@@ -39,13 +54,22 @@ first_month = national_data[
     & (national_data["date"] < first_month_end)
 ]
 
+# Reservoir measurement variables that are meaningful as sparklines
+sparkline_columns = [
+    "fill_level",
+    "capacity_twh",
+    "stored_energy_twh",
+    "previous_week_fill_level",
+    "change_in_fill_level",
+]
+
 # Create one row for every column in the imported dataset
 overview_rows = []
 
 for column in df.columns:
 
-    # LineChartColumn can only visualise numerical values
-    if pd.api.types.is_numeric_dtype(first_month[column]):
+    # Only reservoir measurements are visualised as sparklines
+    if column in sparkline_columns:
         values = (
             first_month[column]
             .dropna()
@@ -67,8 +91,8 @@ overview_df = pd.DataFrame(overview_rows)
 
 st.write(
     "Each row represents one column in the imported dataset. "
-    "For numerical columns, the sparkline shows observations from "
-    "the first month of the national time series."
+    "For reservoir measurement variables, the sparkline shows "
+    "national observations from the first month of the time series."
 )
 
 # Display one row per imported column with a sparkline where applicable
@@ -92,6 +116,6 @@ st.dataframe(
 
 st.caption(
     "Sparklines show national observations from the first month of the "
-    "dataset. Numerical columns are visualised directly, while categorical "
+    "dataset for reservoir measurement variables. Identifier, categorical "
     "and datetime columns are listed without a sparkline."
 )
