@@ -477,6 +477,7 @@ dependencies = [
     { name = "pymongo" },
     { name = "pyspark" },
     { name = "python-dotenv" },
+    { name = "requests" },
     { name = "streamlit" },
 ]
 
@@ -489,6 +490,7 @@ requires-dist = [
     { name = "pymongo", specifier = ">=4.18.0" },
     { name = "pyspark", specifier = ">=3.5,<3.6" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
+    { name = "requests", specifier = ">=2.34.2" },
     { name = "streamlit", specifier = ">=1.63.0" },
 ]
 

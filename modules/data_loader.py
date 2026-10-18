@@ -1,14 +1,25 @@
-from pathlib import Path
-
 import pandas as pd
+import requests
 import streamlit as st
 
 
-@st.cache_data
-def load_data():
-    data_path = Path("data/reservoirs.csv")
+NVE_DATA_URL = (
+    "https://biapi.nve.no/magasinstatistikk/"
+    "api/Magasinstatistikk/HentOffentligData"
+)
 
-    df = pd.read_csv(data_path)
+
+@st.cache_data(ttl=3600)
+def load_data():
+    """
+    Retrieve reservoir statistics directly from the NVE API
+    and prepare the data for use in the Streamlit application.
+    """
+
+    response = requests.get(NVE_DATA_URL, timeout=30)
+    response.raise_for_status()
+
+    df = pd.DataFrame(response.json())
 
     df = df.rename(
         columns={
@@ -28,7 +39,9 @@ def load_data():
 
     df["date"] = pd.to_datetime(df["date"])
 
-    df["next_publication_date"] = df["next_publication_date"].replace(
+    df["next_publication_date"] = df[
+        "next_publication_date"
+    ].replace(
         "0001-01-01T00:00:00",
         pd.NA,
     )
@@ -38,7 +51,6 @@ def load_data():
         errors="coerce",
     )
 
-    # Sort observations chronologically and by geographical area
     df = (
         df
         .sort_values(["date", "area_type", "area_number"])
