@@ -1,7 +1,7 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="IND320 Reservoir Dashboard",
+    page_title="IND320 Energy Dashboard",
     page_icon="💧",
     layout="wide",
 )
