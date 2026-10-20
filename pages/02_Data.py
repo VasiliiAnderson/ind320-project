@@ -97,7 +97,7 @@ st.subheader("Reservoir Observations")
 
 st.dataframe(
     filtered_data[display_columns],
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
 )
 
@@ -152,5 +152,5 @@ st.dataframe(
         ),
     },
     hide_index=True,
-    use_container_width=True,
+    width="stretch",
 )
