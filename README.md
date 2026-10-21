@@ -38,7 +38,7 @@ The Streamlit application contains five pages:
 Add the URL of the Compulsory Assignment 2 Streamlit deployment here:
 
 ```text
-https://ind320-project-hzlq3wqrpcpwplubvuksiy-compulsory-2.streamlit.app/
+https://vasilii-ind320.streamlit.app/
 ```
 
 ## Data Sources
