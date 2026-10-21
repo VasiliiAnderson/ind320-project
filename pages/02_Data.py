@@ -1,4 +1,3 @@
-import pandas as pd
 import streamlit as st
 
 from modules.data_loader import load_data
@@ -6,15 +5,81 @@ from modules.data_loader import load_data
 
 st.title("Reservoir Data")
 
-# Load the reservoir dataset
+# Load reservoir statistics directly from the NVE API
 df = load_data()
 
 st.write(
-    "The table below shows the most relevant variables from the "
-    "Norwegian reservoir dataset."
+    "Explore Norwegian reservoir statistics retrieved directly "
+    "from the NVE Magasinstatistikk API."
 )
 
-# Select relevant columns for the main table
+# Select geographical area type
+selected_area_type = st.radio(
+    "Select area type",
+    options=["EL", "NO", "VASS"],
+    horizontal=True,
+)
+
+# Keep observations belonging to the selected area type
+area_data = (
+    df[df["area_type"] == selected_area_type]
+    .sort_values(["area_number", "date"])
+    .copy()
+)
+
+# Find the area numbers associated with the selected area type
+area_numbers = sorted(
+    area_data["area_number"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+st.caption(
+    f"Available area numbers for {selected_area_type}: "
+    + ", ".join(map(str, area_numbers))
+)
+
+# Create a month variable for interval selection
+area_data["month"] = (
+    area_data["date"]
+    .dt.to_period("M")
+    .astype(str)
+)
+
+# Available months in chronological order
+month_options = (
+    area_data["month"]
+    .drop_duplicates()
+    .sort_values()
+    .tolist()
+)
+
+# Use approximately the most recent 12 months as the default interval
+default_start_index = max(0, len(month_options) - 12)
+
+selected_months = st.select_slider(
+    "Select data interval",
+    options=month_options,
+    value=(
+        month_options[default_start_index],
+        month_options[-1],
+    ),
+)
+
+start_month, end_month = selected_months
+
+# Filter observations to the selected time interval
+filtered_data = area_data[
+    (area_data["month"] >= start_month)
+    & (area_data["month"] <= end_month)
+].copy()
+
+st.caption(
+    f"Showing data from {start_month} to {end_month}."
+)
+
+# Columns shown in the main data table
 display_columns = [
     "date",
     "area_type",
@@ -28,94 +93,64 @@ display_columns = [
     "change_in_fill_level",
 ]
 
+st.subheader("Reservoir Observations")
+
 st.dataframe(
-    df[display_columns],
-    use_container_width=True,
+    filtered_data[display_columns],
+    width="stretch",
     hide_index=True,
 )
 
-st.subheader("First Month Overview")
+st.subheader("Area Overview")
 
-# Use national observations to obtain one coherent time series
-national_data = (
-    df[
-        (df["area_type"] == "NO")
-        & (df["area_number"] == 0)
-    ]
-    .sort_values("date")
+st.write(
+    "Each row represents an area belonging to the selected area type. "
+    "The sparklines show reservoir development during the selected period."
 )
 
-# Select observations from the first month in the dataset
-first_date = national_data["date"].min()
-first_month_end = first_date + pd.DateOffset(months=1)
-
-first_month = national_data[
-    (national_data["date"] >= first_date)
-    & (national_data["date"] < first_month_end)
-]
-
-# Reservoir measurement variables that are meaningful as sparklines
-sparkline_columns = [
-    "fill_level",
-    "capacity_twh",
-    "stored_energy_twh",
-    "previous_week_fill_level",
-    "change_in_fill_level",
-]
-
-# Create one row for every column in the imported dataset
+# Create one row for each area number
 overview_rows = []
 
-for column in df.columns:
-
-    # Only reservoir measurements are visualised as sparklines
-    if column in sparkline_columns:
-        values = (
-            first_month[column]
-            .dropna()
-            .astype(float)
-            .tolist()
-        )
-    else:
-        values = []
+for area_number in area_numbers:
+    area_period = (
+        filtered_data[
+            filtered_data["area_number"] == area_number
+        ]
+        .sort_values("date")
+    )
 
     overview_rows.append(
         {
-            "Column": column,
-            "Data Type": str(df[column].dtype),
-            "First Month": values,
+            "Area Number": area_number,
+            "Fill Level": (
+                area_period["fill_level"]
+                .dropna()
+                .astype(float)
+                .tolist()
+            ),
+            "Stored Energy (TWh)": (
+                area_period["stored_energy_twh"]
+                .dropna()
+                .astype(float)
+                .tolist()
+            ),
         }
     )
 
-overview_df = pd.DataFrame(overview_rows)
-
-st.write(
-    "Each row represents one column in the imported dataset. "
-    "For reservoir measurement variables, the sparkline shows "
-    "national observations from the first month of the time series."
-)
-
-# Display one row per imported column with a sparkline where applicable
+# Display sparklines for each area
 st.dataframe(
-    overview_df,
+    overview_rows,
     column_config={
-        "Column": st.column_config.TextColumn(
-            "Data Column"
+        "Area Number": st.column_config.NumberColumn(
+            "Area Number"
         ),
-        "Data Type": st.column_config.TextColumn(
-            "Data Type"
+        "Fill Level": st.column_config.LineChartColumn(
+            "Fill Level"
         ),
-        "First Month": st.column_config.LineChartColumn(
-            "First Month"
+        "Stored Energy (TWh)": st.column_config.LineChartColumn(
+            "Stored Energy (TWh)"
         ),
     },
     hide_index=True,
-    use_container_width=True,
-    height=430,
-)
-
-st.caption(
-    "Sparklines show national observations from the first month of the "
-    "dataset for reservoir measurement variables. Identifier, categorical "
-    "and datetime columns are listed without a sparkline."
+    width="stretch",
 )
