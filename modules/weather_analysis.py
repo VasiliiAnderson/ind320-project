@@ -59,7 +59,9 @@ def load_weather_coordinates(
                 "No electricity-area shapefile found."
             )
 
-        gdf = gpd.read_file(shapefiles[0])
+        gdf = gpd.read_file(
+            shapefiles[0]
+        )
 
         gdf["region"] = (
             gdf["budomr"]
@@ -101,10 +103,15 @@ def load_weather_coordinates(
                 "No NVE region shapefile found."
             )
 
-        gdf = gpd.read_file(shapefiles[0])
+        # Read the shapefile explicitly as UTF-8 so that
+        # Norwegian characters such as Ø are decoded correctly.
+        gdf = gpd.read_file(
+            shapefiles[0],
+            encoding="utf-8",
+        )
 
         # Mapping from Magasinstatistikk VASS areas
-        # to NVE administrative regions.
+        # to NVE geographical regions.
         vass_mapping = {
             1: ["RS", "RØ"],
             2: ["RV"],
@@ -114,6 +121,18 @@ def load_weather_coordinates(
         regions = vass_mapping[
             int(area_number)
         ]
+
+        # Check that all regions required for the selected
+        # VASS area are actually present in the shapefile.
+        missing_regions = (
+            set(regions)
+            - set(gdf["REGION"].unique())
+        )
+
+        if missing_regions:
+            raise ValueError(
+                f"Missing NVE regions: {missing_regions}"
+            )
 
         selected = gdf[
             gdf["REGION"].isin(regions)
@@ -142,9 +161,13 @@ def load_weather_coordinates(
                 "No NVE region shapefile found."
             )
 
-        gdf = gpd.read_file(shapefiles[0])
+        # Use the same UTF-8 encoding for the NVE shapefile.
+        gdf = gpd.read_file(
+            shapefiles[0],
+            encoding="utf-8",
+        )
 
-        # Combine all NVE regions to represent Norway
+        # Combine all NVE regions to represent Norway.
         geometry = gdf.geometry.union_all()
         crs = gdf.crs
 
@@ -235,6 +258,7 @@ def download_weather(
         data = response.json()
 
         hourly = pd.DataFrame(data["hourly"])
+
         hourly["time"] = pd.to_datetime(
             hourly["time"]
         )
@@ -243,6 +267,7 @@ def download_weather(
 
         weather_frames.append(hourly)
 
+        # Avoid sending requests too rapidly.
         time.sleep(0.2)
 
     weather = pd.concat(
@@ -250,7 +275,7 @@ def download_weather(
         ignore_index=True,
     )
 
-    # Calculate regional hourly averages
+    # Calculate regional hourly averages.
     hourly_average = (
         weather
         .groupby("time", as_index=False)
@@ -312,7 +337,7 @@ def spc_outliers(
 
     coefficients[:k] = 0
 
-    # Seasonally adjusted variation
+    # Seasonally adjusted variation.
     satv = idct(
         coefficients,
         type=2,
