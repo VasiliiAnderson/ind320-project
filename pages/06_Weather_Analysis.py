@@ -14,7 +14,7 @@ st.title("Weather Analysis")
 
 st.write(
     "Explore ERA5 precipitation and temperature data "
-    "for Norwegian electricity areas."
+    "for Norwegian geographical electricity areas."
 )
 
 # Load reservoir statistics

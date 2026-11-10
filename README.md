@@ -186,9 +186,9 @@ ind320-project/
 │   ├── 02_Data.py
 │   ├── 03_Plots.py
 │   ├── 04_Cross_Border.py
-│   ├── 05_About.py
 │   ├── 05_Seasonal_Analysis.py
-│   └── 06_Weather_Analysis.py
+│   ├── 06_Weather_Analysis.py
+│   └── 07_About.py
 ├── main.py
 ├── pyproject.toml
 ├── uv.lock

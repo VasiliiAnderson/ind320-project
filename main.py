@@ -24,11 +24,6 @@ pages = [
         icon="📈",
     ),
     st.Page(
-            "pages/04_Cross_Border.py",
-            title="Cross-Border Flows",
-            icon="⚡",
-    ),
-    st.Page(
         "pages/05_Seasonal_Analysis.py",
         title="Seasonal Analysis",
         icon="🔄",
@@ -42,6 +37,11 @@ pages = [
         "pages/07_About.py",
         title="About",
         icon="ℹ️",
+    ),
+    st.Page(
+        "pages/04_Cross_Border.py",
+        title="Cross-Border Flows",
+        icon="⚡",
     ),
 ]
 
