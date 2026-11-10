@@ -23,89 +23,189 @@ WEATHER_VARIABLES = [
 
 
 @st.cache_data
-def load_elspot_coordinates(
+def load_weather_coordinates(
+    area_type,
+    area_number,
     n_points=1000,
     random_state=42,
 ):
     """
-    Load NVE bidding-area polygons and sample random locations
-    inside each electricity area.
+    Sample weather locations for the selected Magasinstatistikk area.
+
+    EL areas use the NVE electricity bidding-area shapefile.
+    VASS areas use combinations of the NVE regional shapefile.
+    NO represents the combined Norwegian NVE regions.
     """
 
-    shapefile_dir = (
-        Path(__file__).resolve().parents[1]
-        / "data"
-        / "shapefiles"
-        / "elspot"
-    )
+    project_root = Path(__file__).resolve().parents[1]
 
-    shapefiles = list(shapefile_dir.glob("*.shp"))
-
-    if not shapefiles:
-        raise FileNotFoundError(
-            "No bidding-area shapefile was found."
+    # ---------------------------------------------------------
+    # Electricity areas: EL1 -> NO1, ..., EL5 -> NO5
+    # ---------------------------------------------------------
+    if area_type == "EL":
+        shapefile_dir = (
+            project_root
+            / "data"
+            / "shapefiles"
+            / "elspot"
         )
 
-    gdf = gpd.read_file(shapefiles[0])
+        shapefiles = list(
+            shapefile_dir.glob("*.shp")
+        )
 
-    # Standardise names from 'NO 1' to 'NO1'
-    gdf["region"] = (
-        gdf["budomr"]
-        .astype(str)
-        .str.replace(" ", "", regex=False)
+        if not shapefiles:
+            raise FileNotFoundError(
+                "No electricity-area shapefile found."
+            )
+
+        gdf = gpd.read_file(shapefiles[0])
+
+        gdf["region"] = (
+            gdf["budomr"]
+            .astype(str)
+            .str.replace(" ", "", regex=False)
+        )
+
+        target_region = f"NO{int(area_number)}"
+
+        selected = gdf[
+            gdf["region"] == target_region
+        ]
+
+        if selected.empty:
+            raise ValueError(
+                f"No polygon found for {target_region}."
+            )
+
+        geometry = selected.geometry.union_all()
+        crs = gdf.crs
+
+    # ---------------------------------------------------------
+    # Precipitation / reservoir regions
+    # ---------------------------------------------------------
+    elif area_type == "VASS":
+        shapefile_dir = (
+            project_root
+            / "data"
+            / "shapefiles"
+            / "nve_regions"
+        )
+
+        shapefiles = list(
+            shapefile_dir.glob("*.shp")
+        )
+
+        if not shapefiles:
+            raise FileNotFoundError(
+                "No NVE region shapefile found."
+            )
+
+        gdf = gpd.read_file(shapefiles[0])
+
+        # Mapping from Magasinstatistikk VASS areas
+        # to NVE administrative regions.
+        vass_mapping = {
+            1: ["RS", "RØ"],
+            2: ["RV"],
+            3: ["RM", "RN"],
+        }
+
+        regions = vass_mapping[
+            int(area_number)
+        ]
+
+        selected = gdf[
+            gdf["REGION"].isin(regions)
+        ]
+
+        geometry = selected.geometry.union_all()
+        crs = gdf.crs
+
+    # ---------------------------------------------------------
+    # Norway as a whole
+    # ---------------------------------------------------------
+    elif area_type == "NO":
+        shapefile_dir = (
+            project_root
+            / "data"
+            / "shapefiles"
+            / "nve_regions"
+        )
+
+        shapefiles = list(
+            shapefile_dir.glob("*.shp")
+        )
+
+        if not shapefiles:
+            raise FileNotFoundError(
+                "No NVE region shapefile found."
+            )
+
+        gdf = gpd.read_file(shapefiles[0])
+
+        # Combine all NVE regions to represent Norway
+        geometry = gdf.geometry.union_all()
+        crs = gdf.crs
+
+    else:
+        raise ValueError(
+            f"Unsupported area type: {area_type}"
+        )
+
+    # ---------------------------------------------------------
+    # Sample locations inside selected polygon
+    # ---------------------------------------------------------
+    geometry_series = gpd.GeoSeries(
+        [geometry],
+        crs=crs,
     )
 
-    # Sample random locations inside each polygon
-    points = gdf["geometry"].sample_points(
-        size=n_points,
-        random_state=random_state,
+    sampled_points = (
+        geometry_series
+        .sample_points(
+            size=n_points,
+            random_state=random_state,
+        )
+        .to_crs(epsg=4326)
     )
-
-    # Convert coordinates to latitude/longitude
-    points = points.to_crs(epsg=4326)
 
     coordinates = []
 
-    for idx, multipoint in points.items():
-        region = gdf.loc[idx, "region"]
-
-        for point in multipoint.geoms:
-            coordinates.append(
-                {
-                    "region": region,
-                    "latitude": point.y,
-                    "longitude": point.x,
-                }
-            )
+    for point in sampled_points.iloc[0].geoms:
+        coordinates.append(
+            {
+                "latitude": point.y,
+                "longitude": point.x,
+            }
+        )
 
     return pd.DataFrame(coordinates)
 
 
 @st.cache_data(ttl=3600)
 def download_weather(
-    region,
+    area_type,
+    area_number,
     start_date,
     end_date,
     n_locations=10,
     random_state=42,
 ):
     """
-    Download hourly ERA5 weather observations for a region.
+    Download hourly ERA5 weather data for the selected
+    Magasinstatistikk area.
     """
 
-    locations = load_elspot_coordinates()
+    locations = load_weather_coordinates(
+        area_type=area_type,
+        area_number=area_number,
+        n_points=1000,
+        random_state=random_state,
+    )
 
-    region_points = locations[
-        locations["region"] == region
-    ]
-
-    if region_points.empty:
-        raise ValueError(
-            f"No sampled coordinates found for {region}."
-        )
-
-    selected_points = region_points.sample(
-        n=min(n_locations, len(region_points)),
+    selected_points = locations.sample(
+        n=min(n_locations, len(locations)),
         random_state=random_state,
     )
 

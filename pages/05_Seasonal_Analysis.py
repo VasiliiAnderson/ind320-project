@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import streamlit as st
 
+from modules.area_selector import area_selector
 from modules.data_loader import load_data
 from modules.seasonal_analysis import (
     plot_spectrogram,
@@ -18,29 +19,8 @@ st.write(
 # Load reservoir statistics directly from the NVE API
 df = load_data()
 
-# Select geographical area type
-selected_area_type = st.radio(
-    "Select area type",
-    options=["EL", "NO", "VASS"],
-    horizontal=True,
-)
-
-# Find available area numbers for the selected area type
-area_numbers = sorted(
-    df.loc[
-        df["area_type"] == selected_area_type,
-        "area_number",
-    ]
-    .dropna()
-    .unique()
-    .tolist()
-)
-
-# Select one area
-selected_area = st.selectbox(
-    "Select area",
-    options=area_numbers,
-)
+# Use the shared Magasinstatistikk area selector
+selected_area_type, selected_area = area_selector(df)
 
 # Prepare weekly filling-level series
 fill_series = (

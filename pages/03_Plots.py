@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from modules.data_loader import load_data
+from modules.area_selector import area_selector
 
 
 st.title("Reservoir Plots")
@@ -14,17 +15,16 @@ st.write(
     "using data retrieved directly from the NVE Magasinstatistikk API."
 )
 
-# Select geographical area type
-selected_area_type = st.radio(
-    "Select area type",
-    options=["EL", "NO", "VASS"],
-    horizontal=True,
-)
+# Shared area selector used across dashboard pages
+selected_area_type, selected_area = area_selector(df)
 
 # Keep observations belonging to the selected area type
 area_data = (
-    df[df["area_type"] == selected_area_type]
-    .sort_values(["area_number", "date"])
+    df[
+        (df["area_type"] == selected_area_type)
+        & (df["area_number"] == selected_area)
+    ]
+    .sort_values("date")
     .copy()
 )
 

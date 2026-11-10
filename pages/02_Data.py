@@ -1,6 +1,7 @@
 import streamlit as st
 
 from modules.data_loader import load_data
+from modules.area_selector import area_selector
 
 
 st.title("Reservoir Data")
@@ -13,31 +14,17 @@ st.write(
     "from the NVE Magasinstatistikk API."
 )
 
-# Select geographical area type
-selected_area_type = st.radio(
-    "Select area type",
-    options=["EL", "NO", "VASS"],
-    horizontal=True,
-)
+# Shared area selector used across dashboard pages
+selected_area_type, selected_area = area_selector(df)
 
-# Keep observations belonging to the selected area type
+# Keep observations belonging to the selected area
 area_data = (
-    df[df["area_type"] == selected_area_type]
-    .sort_values(["area_number", "date"])
+    df[
+        (df["area_type"] == selected_area_type)
+        & (df["area_number"] == selected_area)
+    ]
+    .sort_values("date")
     .copy()
-)
-
-# Find the area numbers associated with the selected area type
-area_numbers = sorted(
-    area_data["area_number"]
-    .dropna()
-    .unique()
-    .tolist()
-)
-
-st.caption(
-    f"Available area numbers for {selected_area_type}: "
-    + ", ".join(map(str, area_numbers))
 )
 
 # Create a month variable for interval selection
@@ -111,31 +98,25 @@ st.write(
 # Create one row for each area number
 overview_rows = []
 
-for area_number in area_numbers:
-    area_period = (
-        filtered_data[
-            filtered_data["area_number"] == area_number
-        ]
-        .sort_values("date")
-    )
+overview_rows = []
 
-    overview_rows.append(
-        {
-            "Area Number": area_number,
-            "Fill Level": (
-                area_period["fill_level"]
-                .dropna()
-                .astype(float)
-                .tolist()
-            ),
-            "Stored Energy (TWh)": (
-                area_period["stored_energy_twh"]
-                .dropna()
-                .astype(float)
-                .tolist()
-            ),
-        }
-    )
+overview_rows.append(
+    {
+        "Area Number": selected_area,
+        "Fill Level": (
+            filtered_data["fill_level"]
+            .dropna()
+            .astype(float)
+            .tolist()
+        ),
+        "Stored Energy (TWh)": (
+            filtered_data["stored_energy_twh"]
+            .dropna()
+            .astype(float)
+            .tolist()
+        ),
+    }
+)
 
 # Display sparklines for each area
 st.dataframe(

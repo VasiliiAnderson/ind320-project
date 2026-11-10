@@ -12,22 +12,6 @@ def plot_stl(
 ):
     """
     Perform STL decomposition of weekly reservoir filling-level data.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Weekly filling-level observations.
-    seasonal : int
-        Length of the seasonal smoother.
-    trend : int
-        Length of the trend smoother.
-    robust : bool
-        Whether robust fitting should be used.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        STL decomposition plot.
     """
 
     stl = STL(
@@ -40,8 +24,32 @@ def plot_stl(
 
     result = stl.fit()
 
-    fig = result.plot()
-    fig.set_size_inches(11, 8)
+    # Create a compact layout that works well in Streamlit
+    fig, axes = plt.subplots(
+        4,
+        1,
+        figsize=(11, 8),
+        sharex=True,
+    )
+
+    axes[0].plot(series.index, result.observed)
+    axes[0].set_ylabel("Observed")
+
+    axes[1].plot(series.index, result.trend)
+    axes[1].set_ylabel("Trend")
+
+    axes[2].plot(series.index, result.seasonal)
+    axes[2].set_ylabel("Seasonal")
+
+    axes[3].plot(series.index, result.resid)
+    axes[3].set_ylabel("Residual")
+    axes[3].set_xlabel("Date")
+
+    fig.suptitle(
+        "STL Decomposition of Reservoir Filling Level",
+        fontsize=14,
+    )
+
     fig.tight_layout()
 
     return fig

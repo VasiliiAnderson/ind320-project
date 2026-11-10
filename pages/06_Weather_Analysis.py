@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import streamlit as st
 
+from modules.area_selector import area_selector
+from modules.data_loader import load_data
 from modules.weather_analysis import (
     download_weather,
     spc_outliers,
@@ -15,24 +17,23 @@ st.write(
     "for Norwegian electricity areas."
 )
 
-# Select electricity area
-area_number = st.selectbox(
-    "Select electricity area",
-    options=[1, 2, 3, 4, 5],
-    index=2,
-)
+# Load reservoir statistics
+df = load_data()
 
-region = f"NO{area_number}"
+# Use the same area selection as the reservoir pages
+selected_area_type, selected_area = area_selector(df)
 
 st.caption(
-    f"Weather data are downloaded for {region} "
-    "using sampled locations within the bidding area."
+    f"ERA5 weather data for "
+    f"{selected_area_type} area {selected_area}, "
+    "based on 10 sampled locations."
 )
 
 # Assignment requires NO3 for 2024 in the notebook.
 # The Streamlit page allows the same analysis for all areas.
 weather = download_weather(
-    region=region,
+    area_type=selected_area_type,
+    area_number=selected_area,
     start_date="2024-01-01",
     end_date="2024-12-31",
     n_locations=10,
