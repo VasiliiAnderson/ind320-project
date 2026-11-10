@@ -29,6 +29,16 @@ pages = [
         icon="⚡",
     ),
     st.Page(
+        "pages/05_Seasonal_Analysis.py",
+        title="Seasonal Analysis",
+        icon="🔄",
+    ),
+    st.Page(
+        "pages/06_Weather_Analysis.py",
+        title="Weather Analysis",
+        icon="🌦️",
+    ),
+    st.Page(
         "pages/05_About.py",
         title="About",
         icon="ℹ️",
