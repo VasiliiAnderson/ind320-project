@@ -260,8 +260,9 @@ def download_weather(
         hourly = pd.DataFrame(data["hourly"])
 
         hourly["time"] = pd.to_datetime(
-            hourly["time"]
-        )
+            hourly["time"],
+            utc=True,
+        )   
 
         hourly["location_id"] = location_id
 
