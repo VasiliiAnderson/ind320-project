@@ -1,8 +1,14 @@
 import calendar
 
-import matplotlib.pyplot as plt
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import requests
 import streamlit as st
 
+from modules.currency_loader import (
+    download_exchange_rates,
+)
 from modules.mongodb_loader import (
     get_annual_totals,
     get_connections,
@@ -11,257 +17,595 @@ from modules.mongodb_loader import (
 )
 
 
-st.title("Cross-Border Electricity Flows")
+st.title("Energy & Markets")
+
+st.write(
+    "Explore Norwegian cross-border electricity flows "
+    "and NOK exchange rates using data from ENTSO-E "
+    "and Norges Bank."
+)
+
+
+# =========================================================
+# ENTSO-E CROSS-BORDER FLOWS
+# =========================================================
+
+st.header("Cross-Border Electricity Flows")
 
 st.write(
     "Explore physical electricity flows between Norwegian "
-    "bidding zones and neighbouring countries using data "
-    "from the ENTSO-E Transparency Platform."
+    "bidding zones and neighbouring countries."
 )
 
-# Retrieve all cross-border connections currently stored
-# in the MongoDB collection.
-connections = get_connections()
 
-# Stop the page gracefully if the database does not contain data.
+# ---------------------------------------------------------
+# Retrieve available connections
+# ---------------------------------------------------------
+
+try:
+    connections = get_connections()
+
+except Exception as exc:
+    st.error(
+        "Could not connect to the ENTSO-E MongoDB dataset."
+    )
+    st.code(str(exc))
+    st.stop()
+
+
 if not connections:
     st.warning(
-        "No ENTSO-E data are available in MongoDB."
+        "No ENTSO-E data are currently available."
     )
     st.stop()
 
 
-# Split the dashboard into two columns:
-# annual statistics on the left and monthly flows on the right.
-left_col, right_col = st.columns(2)
-
-
 # ---------------------------------------------------------
-# Left column: annual import/export pie chart
+# Main controls
 # ---------------------------------------------------------
-with left_col:
-    st.subheader("Annual Import and Export")
 
-    # Let the user choose which Norwegian cross-border
-    # connection should be analysed.
-    selected_connection = st.radio(
-        "Select connection",
+control_col1, control_col2 = st.columns(2)
+
+
+with control_col1:
+
+    selected_connection = st.selectbox(
+        "Connection",
         options=connections,
     )
 
-    # Retrieve the years available for the selected connection.
-    years = get_years(
-        selected_connection
+
+years = get_years(
+    selected_connection
+)
+
+
+if not years:
+    st.warning(
+        "No years are available for this connection."
     )
+    st.stop()
+
+
+with control_col2:
 
     selected_year = st.selectbox(
-        "Select year",
+        "Year",
         options=years,
         index=len(years) - 1,
     )
 
-    # Aggregate annual transferred energy by direction
-    # directly in MongoDB.
-    annual_totals = get_annual_totals(
-        selected_connection,
-        selected_year,
+
+# =========================================================
+# Annual import / export
+# =========================================================
+
+annual_totals = get_annual_totals(
+    selected_connection,
+    selected_year,
+)
+
+
+if not annual_totals.empty:
+
+    annual_totals = (
+        annual_totals.copy()
     )
 
-    if not annual_totals.empty:
-        # Convert MWh to GWh so the values in the chart
-        # are easier to interpret.
-        annual_totals["total_gwh"] = (
-            annual_totals["total_mwh"] / 1000
-        )
-
-        # Include both direction and transferred energy
-        # in the pie-chart labels.
-        labels = [
-            (
-                f"{row.direction} "
-                f"({row.total_gwh:,.0f} GWh)"
-            )
-            for row in annual_totals.itertuples()
+    annual_totals[
+        "total_gwh"
+    ] = (
+        annual_totals[
+            "total_mwh"
         ]
+        / 1000
+    )
 
-        fig, ax = plt.subplots(
-            figsize=(6, 6)
-        )
 
-        # Show the relative annual shares of import and export.
-        ax.pie(
-            annual_totals["total_mwh"],
-            labels=labels,
-            autopct="%1.1f%%",
-        )
+# =========================================================
+# Monthly flow controls
+# =========================================================
 
-        ax.set_title(
-            f"{selected_connection} – "
-            f"{selected_year}"
-        )
+selected_months = st.pills(
+    "Months",
+    options=list(
+        range(1, 13)
+    ),
+    default=list(
+        range(1, 13)
+    ),
+    selection_mode="multi",
+    format_func=lambda month: (
+        calendar.month_abbr[
+            month
+        ]
+    ),
+)
 
-        st.pyplot(fig)
 
-    else:
+# ---------------------------------------------------------
+# Dashboard columns
+# ---------------------------------------------------------
+
+left_col, right_col = (
+    st.columns(2)
+)
+
+
+# ---------------------------------------------------------
+# Annual import/export chart
+# ---------------------------------------------------------
+
+with left_col:
+
+    st.subheader(
+        "Annual Import and Export"
+    )
+
+    if annual_totals.empty:
+
         st.info(
             "No annual data are available "
-            "for the selected connection and year."
+            "for the selected connection."
+        )
+
+    else:
+
+        pie_fig = px.pie(
+            annual_totals,
+            values="total_gwh",
+            names="direction",
+            hole=0.4,
+            title=(
+                f"{selected_connection} – "
+                f"{selected_year}"
+            ),
+        )
+
+        pie_fig.update_traces(
+            textposition="inside",
+            textinfo=(
+                "percent+label"
+            ),
+            hovertemplate=(
+                "%{label}<br>"
+                "%{value:,.0f} GWh"
+                "<br>%{percent}"
+                "<extra></extra>"
+            ),
+        )
+
+        pie_fig.update_layout(
+            margin=dict(
+                l=20,
+                r=20,
+                t=60,
+                b=20,
+            ),
+            legend_title_text=(
+                "Direction"
+            ),
+        )
+
+        st.plotly_chart(
+            pie_fig,
+            width="stretch",
         )
 
 
 # ---------------------------------------------------------
-# Right column: monthly physical-flow line plot
+# Monthly physical-flow chart
 # ---------------------------------------------------------
-with right_col:
-    st.subheader("Monthly Physical Flow")
 
-    # Allow several months to be selected simultaneously.
-    selected_months = st.pills(
-        "Select months",
-        options=list(range(1, 13)),
-        default=[1],
-        selection_mode="multi",
-        format_func=lambda month: (
-            calendar.month_abbr[month]
-        ),
+with right_col:
+
+    st.subheader(
+        "Physical Flow"
     )
 
-    if selected_months:
-        # Use the same selected connection and year as the
-        # annual chart, but retrieve only the chosen months.
-        monthly_flow = get_monthly_flow(
-            selected_connection,
-            selected_year,
-            selected_months,
+    if not selected_months:
+
+        st.info(
+            "Select at least one month."
         )
 
-        if not monthly_flow.empty:
-            fig, ax = plt.subplots(
-                figsize=(9, 6)
+    else:
+
+        monthly_flow = (
+            get_monthly_flow(
+                selected_connection,
+                selected_year,
+                selected_months,
+            )
+        )
+
+        if monthly_flow.empty:
+
+            st.info(
+                "No observations are available "
+                "for the selected months."
             )
 
-            # Find the available flow directions, normally
-            # Import and Export.
-            directions = monthly_flow[
-                "direction"
-            ].unique()
+        else:
 
-            # Assign one consistent colour to each direction
-            # so Import and Export keep the same colours
-            # across all selected months.
-            direction_colors = {
-                direction: f"C{index}"
-                for index, direction in enumerate(
-                    directions
-                )
-            }
+            flow_fig = go.Figure()
 
-            # Each month is plotted as a separate segment.
-            # This prevents Matplotlib from drawing a line
-            # across months that were not selected.
-            for direction in directions:
-                direction_data = monthly_flow[
-                    monthly_flow[
-                        "direction"
-                    ] == direction
+            directions = (
+                monthly_flow[
+                    "direction"
                 ]
+                .dropna()
+                .unique()
+            )
 
-                # Only the first segment for each direction
-                # receives a label, preventing duplicate
-                # Import/Export entries in the legend.
-                first_segment = True
+            for direction in directions:
 
-                for month in selected_months:
+                direction_data = (
+                    monthly_flow[
+                        monthly_flow[
+                            "direction"
+                        ]
+                        == direction
+                    ]
+                )
+
+                first_trace = True
+
+                for month in (
+                    selected_months
+                ):
+
                     month_data = (
                         direction_data[
                             direction_data[
                                 "timestamp_utc"
-                            ].dt.month == month
+                            ].dt.month
+                            == month
                         ]
                         .sort_values(
                             "timestamp_utc"
                         )
                     )
 
-                    if not month_data.empty:
-                        ax.plot(
-                            month_data[
+                    if (
+                        month_data.empty
+                    ):
+                        continue
+
+                    flow_fig.add_trace(
+                        go.Scatter(
+                            x=month_data[
                                 "timestamp_utc"
                             ],
-                            month_data[
+                            y=month_data[
                                 "quantity_mw"
                             ],
-                            label=(
-                                direction
-                                if first_segment
-                                else None
+                            mode="lines",
+                            name=direction,
+                            legendgroup=direction,
+                            showlegend=(
+                                first_trace
                             ),
-                            color=(
-                                direction_colors[
-                                    direction
-                                ]
+                            hovertemplate=(
+                                "%{x|%Y-%m-%d %H:%M}"
+                                "<br>"
+                                "%{y:,.0f} MW"
+                                "<extra>"
+                                + direction
+                                + "</extra>"
                             ),
                         )
+                    )
 
-                        first_segment = False
+                    first_trace = False
 
-            # Add descriptive labels and basic formatting.
-            ax.set_title(
-                f"{selected_connection} – "
-                f"{selected_year}"
+            flow_fig.update_layout(
+                title=(
+                    f"{selected_connection} – "
+                    f"{selected_year}"
+                ),
+                xaxis_title=(
+                    "Timestamp (UTC)"
+                ),
+                yaxis_title=(
+                    "Physical Flow (MW)"
+                ),
+                hovermode="x unified",
+                margin=dict(
+                    l=20,
+                    r=20,
+                    t=60,
+                    b=20,
+                ),
+                legend_title_text=(
+                    "Direction"
+                ),
             )
 
-            ax.set_xlabel(
-                "Timestamp (UTC)"
+            st.plotly_chart(
+                flow_fig,
+                width="stretch",
             )
 
-            ax.set_ylabel(
-                "Physical Flow (MW)"
-            )
 
-            ax.legend(
-                title="Direction"
-            )
+# =========================================================
+# Annual KPIs
+# =========================================================
 
-            ax.grid(
-                alpha=0.3
-            )
+if not annual_totals.empty:
 
-            fig.tight_layout()
+    st.subheader(
+        "Annual Flow Summary"
+    )
 
-            st.pyplot(fig)
+    metric_columns = (
+        st.columns(
+            len(annual_totals)
+        )
+    )
 
-        else:
-            st.info(
-                "No observations are available "
-                "for the selected months."
-            )
+    for column, row in zip(
+        metric_columns,
+        annual_totals.itertuples(),
+    ):
 
-    else:
-        st.info(
-            "Select at least one month."
+        column.metric(
+            row.direction,
+            (
+                f"{row.total_gwh:,.0f} "
+                "GWh"
+            ),
         )
 
 
+# =========================================================
+# NOK EXCHANGE RATES
+# =========================================================
+
+st.divider()
+
+st.header(
+    "Exchange Rates"
+)
+
+st.write(
+    "Daily EUR/NOK and USD/NOK spot exchange rates "
+    "from Norges Bank."
+)
+
+
 # ---------------------------------------------------------
-# Data-source documentation
+# Currency period
 # ---------------------------------------------------------
-# Keep the processing description available without taking
-# permanent space in the main dashboard layout.
+
+currency_start_date = (
+    f"{selected_year}-01-01"
+)
+
+currency_end_date = (
+    f"{selected_year}-12-31"
+)
+
+
+try:
+
+    exchange_rates = (
+        download_exchange_rates(
+            currencies=(
+                "EUR",
+                "USD",
+            ),
+            start_date=(
+                currency_start_date
+            ),
+            end_date=(
+                currency_end_date
+            ),
+        )
+    )
+
+except (
+    requests.exceptions.RequestException,
+    ValueError,
+) as exc:
+
+    st.error(
+        "Exchange rates could not be "
+        "retrieved from Norges Bank."
+    )
+
+    st.code(
+        str(exc)
+    )
+
+    exchange_rates = (
+        pd.DataFrame()
+    )
+
+
+# ---------------------------------------------------------
+# Currency visualisation
+# ---------------------------------------------------------
+
+if not exchange_rates.empty:
+
+    currency_fig = px.line(
+        exchange_rates,
+        x="date",
+        y="exchange_rate",
+        color="currency",
+        labels={
+            "date": "Date",
+            "exchange_rate": (
+                "NOK per unit"
+            ),
+            "currency": (
+                "Currency"
+            ),
+        },
+        title=(
+            f"EUR/NOK and USD/NOK – "
+            f"{selected_year}"
+        ),
+    )
+
+    currency_fig.update_layout(
+        hovermode="x unified",
+        margin=dict(
+            l=20,
+            r=20,
+            t=60,
+            b=20,
+        ),
+        legend_title_text=(
+            "Currency"
+        ),
+    )
+
+    st.plotly_chart(
+        currency_fig,
+        width="stretch",
+    )
+
+
+    # -----------------------------------------------------
+    # Latest exchange-rate KPIs
+    # -----------------------------------------------------
+
+    latest_rates = (
+        exchange_rates
+        .sort_values("date")
+        .groupby(
+            "currency",
+            as_index=False,
+        )
+        .last()
+    )
+
+
+    eur_data = (
+        latest_rates[
+            latest_rates[
+                "currency"
+            ]
+            == "EUR"
+        ]
+    )
+
+    usd_data = (
+        latest_rates[
+            latest_rates[
+                "currency"
+            ]
+            == "USD"
+        ]
+    )
+
+
+    eur_col, usd_col = (
+        st.columns(2)
+    )
+
+
+    if not eur_data.empty:
+
+        eur_rate = (
+            eur_data[
+                "exchange_rate"
+            ].iloc[0]
+        )
+
+        eur_date = (
+            eur_data[
+                "date"
+            ].iloc[0]
+        )
+
+        eur_col.metric(
+            "EUR/NOK",
+            f"{eur_rate:.3f}",
+            help=(
+                "Latest available rate "
+                f"in {selected_year}: "
+                f"{eur_date:%Y-%m-%d}"
+            ),
+        )
+
+
+    if not usd_data.empty:
+
+        usd_rate = (
+            usd_data[
+                "exchange_rate"
+            ].iloc[0]
+        )
+
+        usd_date = (
+            usd_data[
+                "date"
+            ].iloc[0]
+        )
+
+        usd_col.metric(
+            "USD/NOK",
+            f"{usd_rate:.3f}",
+            help=(
+                "Latest available rate "
+                f"in {selected_year}: "
+                f"{usd_date:%Y-%m-%d}"
+            ),
+        )
+
+
+# =========================================================
+# Data documentation
+# =========================================================
+
 with st.expander(
     "About the data and processing"
 ):
-    st.write(
+
+    st.markdown(
         """
-        Cross-border physical flow data are retrieved from
-        the ENTSO-E Transparency Platform API.
+        **ENTSO-E**
 
-        Data for the latest two-year period are first stored
-        in Cassandra. Spark is then used to read, filter and
-        prepare the data before the curated dataset is stored
-        in MongoDB Atlas.
+        Cross-border physical-flow data originate from the
+        ENTSO-E Transparency Platform. The prepared observations
+        are stored in MongoDB and retrieved dynamically by the
+        Streamlit application.
 
-        This Streamlit page reads the prepared data directly
-        from MongoDB.
+        Timestamps are parsed explicitly as UTC to avoid
+        ambiguity related to daylight-saving time.
+
+        **Norges Bank**
+
+        EUR/NOK and USD/NOK spot exchange rates are downloaded
+        directly from the Norges Bank exchange-rate API.
+        Exchange-rate observations are daily and therefore
+        treated as calendar-date observations rather than
+        timezone-dependent hourly observations.
+
+        Both data sources are cached to reduce unnecessary
+        requests and improve dashboard performance.
         """
     )
