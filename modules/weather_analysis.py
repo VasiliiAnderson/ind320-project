@@ -1,6 +1,9 @@
 from pathlib import Path
 import time
 
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -527,21 +530,36 @@ def spc_outliers(
     series,
     cutoff=12,
     n_sd=3,
+    variable_label="Temperature",
+    unit="°C",
 ):
     """
-    Detect precipitation outliers using DCT high-pass
-    filtering and robust SPC boundaries.
+    Detect anomalies using DCT high-pass filtering and
+    robust SPC boundaries.
+
+    Works with temperature, precipitation and snowfall.
     """
 
-    x = series.to_numpy(
+    clean_series = (
+        series
+        .dropna()
+        .sort_index()
+    )
+
+    x = clean_series.to_numpy(
         dtype=float
     )
 
     n = len(x)
 
+    if n < 10:
+        raise ValueError(
+            "Not enough observations for SPC analysis."
+        )
+
     samples_per_year = (
         _samples_per_year(
-            series.index
+            clean_series.index
         )
     )
 
@@ -554,6 +572,12 @@ def spc_outliers(
         )
     )
 
+    # Avoid removing all DCT coefficients.
+    k = min(
+        max(k, 1),
+        n - 1,
+    )
+
     coefficients = dct(
         x,
         type=2,
@@ -562,6 +586,7 @@ def spc_outliers(
 
     coefficients[:k] = 0
 
+    # Seasonally adjusted time variation (SATV)
     satv = idct(
         coefficients,
         type=2,
@@ -583,18 +608,22 @@ def spc_outliers(
         )
     )
 
+    # Fallback when the robust deviation is zero.
+    if robust_sd == 0:
+        robust_sd = np.std(
+            satv
+        )
+
     upper = (
         seasonal_level
         + centre
-        + n_sd
-        * robust_sd
+        + n_sd * robust_sd
     )
 
     lower = (
         seasonal_level
         + centre
-        - n_sd
-        * robust_sd
+        - n_sd * robust_sd
     )
 
     is_outlier = (
@@ -602,54 +631,115 @@ def spc_outliers(
         | (x < lower)
     )
 
-    fig, ax = plt.subplots(
-        figsize=(11, 4)
-    )
-
-    ax.plot(
-        series.index,
-        x,
-        linewidth=0.7,
-        label="Precipitation",
-    )
-
-    ax.plot(
-        series.index,
-        upper,
-        linestyle="--",
-        linewidth=0.8,
-        label="SPC boundaries",
-    )
-
-    ax.plot(
-        series.index,
-        lower,
-        linestyle="--",
-        linewidth=0.8,
-    )
-
-    ax.scatter(
-        series.index[
-            is_outlier
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.12,
+        subplot_titles=[
+            f"{variable_label} with SPC boundaries",
+            "Seasonally Adjusted Time Variation (SATV)",
         ],
-        x[
-            is_outlier
-        ],
-        s=10,
-        label="Outliers",
     )
 
-    ax.set_xlabel(
-        "Time (UTC)"
+    # Original weather series
+    fig.add_trace(
+        go.Scatter(
+            x=clean_series.index,
+            y=x,
+            mode="lines",
+            name=variable_label,
+        ),
+        row=1,
+        col=1,
     )
 
-    ax.set_ylabel(
-        "Precipitation (mm)"
+    # Upper boundary
+    fig.add_trace(
+        go.Scatter(
+            x=clean_series.index,
+            y=upper,
+            mode="lines",
+            name="Upper SPC boundary",
+            line=dict(
+                dash="dash"
+            ),
+        ),
+        row=1,
+        col=1,
     )
 
-    ax.legend()
+    # Lower boundary
+    fig.add_trace(
+        go.Scatter(
+            x=clean_series.index,
+            y=lower,
+            mode="lines",
+            name="Lower SPC boundary",
+            line=dict(
+                dash="dash"
+            ),
+        ),
+        row=1,
+        col=1,
+    )
 
-    fig.tight_layout()
+    # Outliers
+    fig.add_trace(
+        go.Scatter(
+            x=clean_series.index[
+                is_outlier
+            ],
+            y=x[
+                is_outlier
+            ],
+            mode="markers",
+            name="Outliers",
+        ),
+        row=1,
+        col=1,
+    )
+
+    # SATV
+    fig.add_trace(
+        go.Scatter(
+            x=clean_series.index,
+            y=satv,
+            mode="lines",
+            name="SATV",
+        ),
+        row=2,
+        col=1,
+    )
+
+    fig.update_yaxes(
+        title_text=unit,
+        row=1,
+        col=1,
+    )
+
+    fig.update_yaxes(
+        title_text="Variation",
+        row=2,
+        col=1,
+    )
+
+    fig.update_xaxes(
+        title_text="Time (UTC)",
+        row=2,
+        col=1,
+    )
+
+    fig.update_layout(
+        height=650,
+        hovermode="x unified",
+        margin=dict(
+            l=40,
+            r=20,
+            t=70,
+            b=40,
+        ),
+    )
 
     summary = {
         "n_outliers": int(
@@ -663,72 +753,95 @@ def spc_outliers(
     return fig, summary
 
 
-# ---------------------------------------------------------
-# Local Outlier Factor
-# ---------------------------------------------------------
-
-def temperature_lof(
+def lof_outliers(
     series,
     contamination=0.01,
     n_neighbors=20,
+    variable_label="Temperature",
+    unit="°C",
 ):
     """
-    Detect temperature anomalies using
-    Local Outlier Factor.
+    Detect anomalies using Local Outlier Factor.
+
+    Works with temperature, precipitation and snowfall.
     """
 
-    X = (
+    clean_series = (
         series
+        .dropna()
+        .sort_index()
+    )
+
+    if len(clean_series) < 3:
+        raise ValueError(
+            "Not enough observations for LOF analysis."
+        )
+
+    # LOF requires fewer neighbours than observations.
+    safe_neighbors = min(
+        n_neighbors,
+        len(clean_series) - 1,
+    )
+
+    X = (
+        clean_series
         .to_numpy()
         .reshape(-1, 1)
     )
 
     lof = LocalOutlierFactor(
-        n_neighbors=n_neighbors,
+        n_neighbors=safe_neighbors,
         contamination=contamination,
     )
 
-    labels = (
-        lof.fit_predict(X)
+    labels = lof.fit_predict(
+        X
     )
 
     is_anomaly = (
         labels == -1
     )
 
-    fig, ax = plt.subplots(
-        figsize=(11, 4)
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=clean_series.index,
+            y=clean_series,
+            mode="lines",
+            name=variable_label,
+        )
     )
 
-    ax.plot(
-        series.index,
-        series,
-        linewidth=0.7,
-        label="Temperature",
+    fig.add_trace(
+        go.Scatter(
+            x=clean_series.index[
+                is_anomaly
+            ],
+            y=clean_series[
+                is_anomaly
+            ],
+            mode="markers",
+            name="LOF anomalies",
+        )
     )
 
-    ax.scatter(
-        series.index[
-            is_anomaly
-        ],
-        series[
-            is_anomaly
-        ],
-        s=15,
-        label="LOF anomalies",
+    fig.update_layout(
+        title=(
+            f"LOF Anomalies – "
+            f"{variable_label}"
+        ),
+        xaxis_title="Time (UTC)",
+        yaxis_title=unit,
+        hovermode="x unified",
+        height=500,
+        margin=dict(
+            l=40,
+            r=20,
+            t=70,
+            b=40,
+        ),
     )
-
-    ax.set_xlabel(
-        "Time (UTC)"
-    )
-
-    ax.set_ylabel(
-        "Temperature (°C)"
-    )
-
-    ax.legend()
-
-    fig.tight_layout()
 
     summary = {
         "n_anomalies": int(
@@ -740,3 +853,18 @@ def temperature_lof(
     }
 
     return fig, summary
+
+
+# Keep backwards compatibility with earlier notebook code.
+def temperature_lof(
+    series,
+    contamination=0.01,
+    n_neighbors=20,
+):
+    return lof_outliers(
+        series,
+        contamination=contamination,
+        n_neighbors=n_neighbors,
+        variable_label="Temperature",
+        unit="°C",
+    )
