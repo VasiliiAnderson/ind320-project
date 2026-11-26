@@ -22,6 +22,10 @@ WEATHER_VARIABLES = [
 ]
 
 
+# ---------------------------------------------------------
+# Weather coordinates
+# ---------------------------------------------------------
+
 @st.cache_data
 def load_weather_coordinates(
     area_type,
@@ -39,10 +43,8 @@ def load_weather_coordinates(
 
     project_root = Path(__file__).resolve().parents[1]
 
-    # ---------------------------------------------------------
-    # Electricity areas: EL1 -> NO1, ..., EL5 -> NO5
-    # ---------------------------------------------------------
     if area_type == "EL":
+
         shapefile_dir = (
             project_root
             / "data"
@@ -66,7 +68,11 @@ def load_weather_coordinates(
         gdf["region"] = (
             gdf["budomr"]
             .astype(str)
-            .str.replace(" ", "", regex=False)
+            .str.replace(
+                " ",
+                "",
+                regex=False,
+            )
         )
 
         target_region = f"NO{int(area_number)}"
@@ -83,10 +89,8 @@ def load_weather_coordinates(
         geometry = selected.geometry.union_all()
         crs = gdf.crs
 
-    # ---------------------------------------------------------
-    # Precipitation / reservoir regions
-    # ---------------------------------------------------------
     elif area_type == "VASS":
+
         shapefile_dir = (
             project_root
             / "data"
@@ -103,15 +107,11 @@ def load_weather_coordinates(
                 "No NVE region shapefile found."
             )
 
-        # Read the shapefile explicitly as UTF-8 so that
-        # Norwegian characters such as Ø are decoded correctly.
         gdf = gpd.read_file(
             shapefiles[0],
             encoding="utf-8",
         )
 
-        # Mapping from Magasinstatistikk VASS areas
-        # to NVE geographical regions.
         vass_mapping = {
             1: ["RS", "RØ"],
             2: ["RV"],
@@ -122,8 +122,6 @@ def load_weather_coordinates(
             int(area_number)
         ]
 
-        # Check that all regions required for the selected
-        # VASS area are actually present in the shapefile.
         missing_regions = (
             set(regions)
             - set(gdf["REGION"].unique())
@@ -141,10 +139,8 @@ def load_weather_coordinates(
         geometry = selected.geometry.union_all()
         crs = gdf.crs
 
-    # ---------------------------------------------------------
-    # Norway as a whole
-    # ---------------------------------------------------------
     elif area_type == "NO":
+
         shapefile_dir = (
             project_root
             / "data"
@@ -161,13 +157,11 @@ def load_weather_coordinates(
                 "No NVE region shapefile found."
             )
 
-        # Use the same UTF-8 encoding for the NVE shapefile.
         gdf = gpd.read_file(
             shapefiles[0],
             encoding="utf-8",
         )
 
-        # Combine all NVE regions to represent Norway.
         geometry = gdf.geometry.union_all()
         crs = gdf.crs
 
@@ -176,9 +170,6 @@ def load_weather_coordinates(
             f"Unsupported area type: {area_type}"
         )
 
-    # ---------------------------------------------------------
-    # Sample locations inside selected polygon
-    # ---------------------------------------------------------
     geometry_series = gpd.GeoSeries(
         [geometry],
         crs=crs,
@@ -206,6 +197,10 @@ def load_weather_coordinates(
     return pd.DataFrame(coordinates)
 
 
+# ---------------------------------------------------------
+# Hourly weather download
+# ---------------------------------------------------------
+
 @st.cache_data(ttl=3600)
 def download_weather(
     area_type,
@@ -228,7 +223,10 @@ def download_weather(
     )
 
     selected_points = locations.sample(
-        n=min(n_locations, len(locations)),
+        n=min(
+            n_locations,
+            len(locations),
+        ),
         random_state=random_state,
     )
 
@@ -237,12 +235,15 @@ def download_weather(
     for location_id, (_, point) in enumerate(
         selected_points.iterrows()
     ):
+
         params = {
             "latitude": point["latitude"],
             "longitude": point["longitude"],
             "start_date": start_date,
             "end_date": end_date,
-            "hourly": ",".join(WEATHER_VARIABLES),
+            "hourly": ",".join(
+                WEATHER_VARIABLES
+            ),
             "models": "era5",
             "timezone": "UTC",
         }
@@ -257,18 +258,23 @@ def download_weather(
 
         data = response.json()
 
-        hourly = pd.DataFrame(data["hourly"])
+        hourly = pd.DataFrame(
+            data["hourly"]
+        )
 
         hourly["time"] = pd.to_datetime(
             hourly["time"],
             utc=True,
-        )   
+        )
 
-        hourly["location_id"] = location_id
+        hourly["location_id"] = (
+            location_id
+        )
 
-        weather_frames.append(hourly)
+        weather_frames.append(
+            hourly
+        )
 
-        # Avoid sending requests too rapidly.
         time.sleep(0.2)
 
     weather = pd.concat(
@@ -276,10 +282,12 @@ def download_weather(
         ignore_index=True,
     )
 
-    # Calculate regional hourly averages.
     hourly_average = (
         weather
-        .groupby("time", as_index=False)
+        .groupby(
+            "time",
+            as_index=False,
+        )
         .agg(
             avg_temperature=(
                 "temperature_2m",
@@ -299,13 +307,221 @@ def download_weather(
     return hourly_average
 
 
+# ---------------------------------------------------------
+# Latest safe ERA5 date
+# ---------------------------------------------------------
+
+def latest_era5_date():
+    """
+    Return a conservative latest date expected to be
+    available from ERA5.
+
+    ERA5 normally has around a five-day delay.
+    A seven-day buffer is used to avoid requesting
+    observations that have not yet been published.
+    """
+
+    return (
+        pd.Timestamp.now(
+            tz="UTC"
+        )
+        .normalize()
+        .tz_localize(None)
+        - pd.Timedelta(days=7)
+    )
+
+
+# ---------------------------------------------------------
+# Weather summary for map
+# ---------------------------------------------------------
+
+@st.cache_data(ttl=3600)
+def get_weather_map_summary(
+    area_type,
+    area_numbers,
+    start_date,
+    end_date,
+    n_locations=3,
+    random_state=42,
+):
+    """
+    Calculate aggregated daily ERA5 weather values for
+    areas displayed on the interactive map.
+
+    Daily data are used instead of hourly observations
+    because the map only requires aggregated values.
+    """
+
+    start_date = pd.Timestamp(
+        start_date
+    )
+
+    end_date = pd.Timestamp(
+        end_date
+    )
+
+    available_end = (
+        latest_era5_date()
+    )
+
+    safe_end_date = min(
+        end_date,
+        available_end,
+    )
+
+    if start_date > safe_end_date:
+        raise ValueError(
+            "The selected period is newer than the "
+            "currently available ERA5 data."
+        )
+
+    rows = []
+
+    for area_number in area_numbers:
+
+        locations = load_weather_coordinates(
+            area_type=area_type,
+            area_number=area_number,
+            n_points=1000,
+            random_state=random_state,
+        )
+
+        selected_points = (
+            locations.sample(
+                n=min(
+                    n_locations,
+                    len(locations),
+                ),
+                random_state=random_state,
+            )
+        )
+
+        location_summaries = []
+
+        for _, point in (
+            selected_points.iterrows()
+        ):
+
+            params = {
+                "latitude": point["latitude"],
+                "longitude": point["longitude"],
+                "start_date": (
+                    start_date.strftime(
+                        "%Y-%m-%d"
+                    )
+                ),
+                "end_date": (
+                    safe_end_date.strftime(
+                        "%Y-%m-%d"
+                    )
+                ),
+                "daily": (
+                    "temperature_2m_mean,"
+                    "precipitation_sum,"
+                    "snowfall_sum"
+                ),
+                "models": "era5",
+                "timezone": "UTC",
+            }
+
+            response = requests.get(
+                ARCHIVE_URL,
+                params=params,
+                timeout=120,
+            )
+
+            if not response.ok:
+                raise requests.exceptions.HTTPError(
+                    (
+                        f"Open-Meteo returned "
+                        f"{response.status_code}: "
+                        f"{response.text}"
+                    ),
+                    response=response,
+                )
+
+            data = response.json()
+
+            daily = pd.DataFrame(
+                data["daily"]
+            )
+
+            location_summaries.append(
+                {
+                    "avg_temperature": (
+                        daily[
+                            "temperature_2m_mean"
+                        ].mean()
+                    ),
+                    "total_precipitation": (
+                        daily[
+                            "precipitation_sum"
+                        ].sum()
+                    ),
+                    "total_snowfall": (
+                        daily[
+                            "snowfall_sum"
+                        ].sum()
+                    ),
+                }
+            )
+
+            time.sleep(0.2)
+
+        location_summary = pd.DataFrame(
+            location_summaries
+        )
+
+        rows.append(
+            {
+                "area_number": area_number,
+                "avg_temperature": (
+                    location_summary[
+                        "avg_temperature"
+                    ].mean()
+                ),
+                "total_precipitation": (
+                    location_summary[
+                        "total_precipitation"
+                    ].mean()
+                ),
+                "total_snowfall": (
+                    location_summary[
+                        "total_snowfall"
+                    ].mean()
+                ),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------
+# Helper for yearly sampling frequency
+# ---------------------------------------------------------
+
 def _samples_per_year(index):
-    """Estimate number of observations per year."""
+    """
+    Estimate the number of observations per year.
+    """
 
-    step = pd.Series(index).diff().median()
+    step = (
+        pd.Series(index)
+        .diff()
+        .median()
+    )
 
-    return pd.Timedelta(days=365.25) / step
+    return (
+        pd.Timedelta(
+            days=365.25
+        )
+        / step
+    )
 
+
+# ---------------------------------------------------------
+# DCT / SPC anomaly detection
+# ---------------------------------------------------------
 
 def spc_outliers(
     series,
@@ -317,16 +533,24 @@ def spc_outliers(
     filtering and robust SPC boundaries.
     """
 
-    x = series.to_numpy(dtype=float)
+    x = series.to_numpy(
+        dtype=float
+    )
+
     n = len(x)
 
-    samples_per_year = _samples_per_year(
-        series.index
+    samples_per_year = (
+        _samples_per_year(
+            series.index
+        )
     )
 
     k = int(
         round(
-            2 * n * cutoff / samples_per_year
+            2
+            * n
+            * cutoff
+            / samples_per_year
         )
     )
 
@@ -338,32 +562,39 @@ def spc_outliers(
 
     coefficients[:k] = 0
 
-    # Seasonally adjusted variation.
     satv = idct(
         coefficients,
         type=2,
         norm="ortho",
     )
 
-    seasonal_level = x - satv
+    seasonal_level = (
+        x - satv
+    )
 
-    centre = np.median(satv)
+    centre = np.median(
+        satv
+    )
 
     robust_sd = (
         1.4826
-        * median_abs_deviation(satv)
+        * median_abs_deviation(
+            satv
+        )
     )
 
     upper = (
         seasonal_level
         + centre
-        + n_sd * robust_sd
+        + n_sd
+        * robust_sd
     )
 
     lower = (
         seasonal_level
         + centre
-        - n_sd * robust_sd
+        - n_sd
+        * robust_sd
     )
 
     is_outlier = (
@@ -398,14 +629,24 @@ def spc_outliers(
     )
 
     ax.scatter(
-        series.index[is_outlier],
-        x[is_outlier],
+        series.index[
+            is_outlier
+        ],
+        x[
+            is_outlier
+        ],
         s=10,
         label="Outliers",
     )
 
-    ax.set_xlabel("Time (UTC)")
-    ax.set_ylabel("Precipitation (mm)")
+    ax.set_xlabel(
+        "Time (UTC)"
+    )
+
+    ax.set_ylabel(
+        "Precipitation (mm)"
+    )
+
     ax.legend()
 
     fig.tight_layout()
@@ -422,25 +663,38 @@ def spc_outliers(
     return fig, summary
 
 
+# ---------------------------------------------------------
+# Local Outlier Factor
+# ---------------------------------------------------------
+
 def temperature_lof(
     series,
     contamination=0.01,
     n_neighbors=20,
 ):
     """
-    Detect temperature anomalies using Local Outlier Factor.
+    Detect temperature anomalies using
+    Local Outlier Factor.
     """
 
-    X = series.to_numpy().reshape(-1, 1)
+    X = (
+        series
+        .to_numpy()
+        .reshape(-1, 1)
+    )
 
     lof = LocalOutlierFactor(
         n_neighbors=n_neighbors,
         contamination=contamination,
     )
 
-    labels = lof.fit_predict(X)
+    labels = (
+        lof.fit_predict(X)
+    )
 
-    is_anomaly = labels == -1
+    is_anomaly = (
+        labels == -1
+    )
 
     fig, ax = plt.subplots(
         figsize=(11, 4)
@@ -454,14 +708,24 @@ def temperature_lof(
     )
 
     ax.scatter(
-        series.index[is_anomaly],
-        series[is_anomaly],
+        series.index[
+            is_anomaly
+        ],
+        series[
+            is_anomaly
+        ],
         s=15,
         label="LOF anomalies",
     )
 
-    ax.set_xlabel("Time (UTC)")
-    ax.set_ylabel("Temperature (°C)")
+    ax.set_xlabel(
+        "Time (UTC)"
+    )
+
+    ax.set_ylabel(
+        "Temperature (°C)"
+    )
+
     ax.legend()
 
     fig.tight_layout()
