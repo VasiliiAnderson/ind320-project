@@ -1,166 +1,130 @@
 # IND320 Project
 
-Project for **IND320 – Data to Decision** at NMBU.
+Project for **IND320 – Data to Decision** at the Norwegian University of Life Sciences (NMBU).
 
-This repository contains the work for the IND320 compulsory assignments.
-The project has been developed progressively from reservoir data
-exploration into an interactive energy and weather analysis dashboard.
-
-## Compulsory Assignment 3
-
-Compulsory Assignment 3 extends the existing Streamlit application with:
-
-- geographical data from NVE shapefiles
-- random sampling of locations within Norwegian regions
-- historical ERA5 weather data from Open-Meteo
-- precipitation outlier detection using DCT and Statistical Process Control
-- temperature anomaly detection using Local Outlier Factor
-- STL decomposition of reservoir filling levels
-- spectrogram analysis
-- shared geographical selection across Streamlit pages
+This repository contains the work developed throughout the IND320 compulsory assignments. The project combines Norwegian reservoir, weather, electricity-market and exchange-rate data in an interactive Streamlit dashboard for exploration, analysis and forecasting.
 
 ## Streamlit Application
 
-The Streamlit application contains seven pages:
+The application follows the workflow:
 
-- **Home** – introduction and navigation
-- **Reservoir Data** – explore reservoir statistics from NVE
-- **Reservoir Plots** – interactive reservoir visualisations
-- **Seasonal Analysis** – STL decomposition and spectrogram
-- **Weather Analysis** – precipitation/SPC and temperature/LOF analysis
-- **Cross-Border Flows** – electricity imports and exports
-- **About** – project information, data sources and methods
+**Explore → Analyse → Predict**
 
-### Live application
+### Explore
+
+- **Map & Data Overview** – interactive geographical exploration of Norwegian reservoir and ERA5 weather data
+- **Energy & Markets** – cross-border electricity flows and EUR/NOK and USD/NOK exchange rates
+
+### Analyse
+
+- **Seasonal Patterns** – STL decomposition and spectrogram analysis
+- **Weather & Anomalies** – SATV/SPC and Local Outlier Factor for temperature, precipitation and snowfall
+- **Weather–Reservoir Correlation** – sliding-window correlations with selectable weather variable, lag and window length
+
+### Predict
+
+- **Reservoir Forecast** – monthly reservoir filling forecasts using River SNARIMAX with selectable model parameters and exogenous variables
+
+### Information
+
+- **About** – project information, methods and data sources
+
+## Live Application
 
 https://vasilii-ind320.streamlit.app/
+
+## Compulsory Assignment 4
+
+Compulsory Assignment 4 extends the project with:
+
+- EUR/NOK and USD/NOK exchange-rate data from Norges Bank
+- investigation and handling of timezones across the different data sources
+- monthly reservoir forecasting using River SNARIMAX
+- testing of model parameters, training-history length, forecast horizon and exogenous variables
+- sliding-window correlation analysis between weather and reservoir conditions
+- an interactive GeoJSON map with reservoir and ERA5 weather overlays
+- redesigned Streamlit navigation based on Explore → Analyse → Predict
+- shared geographical selections using Streamlit session state
+- interactive Plotly visualisations
+- caching, loading indicators and error handling
 
 ## Data Sources
 
 ### NVE Magasinstatistikk
 
-Reservoir statistics are retrieved directly from the
-NVE Magasinstatistikk API.
-
-The data include:
+NVE reservoir statistics provide information about:
 
 - reservoir filling level
 - storage capacity
 - stored energy
-- geographical area type and area number
-- ISO year and week
 - weekly changes in filling level
+- geographical area type and area number
 
 ### NVE Geographical Data
 
-NVE shapefiles are used to represent:
+NVE shapefiles are used to represent Norwegian electricity price areas and water regions. The polygons are also used for geographical sampling of weather locations.
 
-- Norwegian electricity bidding areas NO1–NO5
-- NVE geographical regions used to construct the VASS areas
+### Open-Meteo / ERA5
 
-The geographical polygons are processed with GeoPandas and used to
-sample reproducible weather locations.
+Historical weather observations are retrieved using the Open-Meteo Historical Weather API with ERA5 reanalysis data.
 
-### Open-Meteo
-
-Historical hourly weather observations are retrieved from the
-Open-Meteo Historical Weather API using the **ERA5 reanalysis model**.
-
-The project retrieves:
+The project uses:
 
 - temperature
 - precipitation
 - snowfall
 
-For the required analysis, weather data for NO3 during 2024 are used.
+Weather timestamps are requested and processed in UTC.
 
 ### ENTSO-E Transparency Platform
 
-The ENTSO-E API is used to retrieve physical cross-border electricity
-flow data for Norwegian bidding zones and neighbouring areas.
+Physical cross-border electricity-flow data are retrieved from an existing project pipeline and stored in MongoDB for use in the Streamlit application.
 
-These data were introduced in Compulsory Assignment 2 and remain part
-of the Streamlit application.
+The timestamps are represented in UTC.
+
+### Norges Bank
+
+The Norges Bank open data API is used to retrieve daily:
+
+- EUR/NOK
+- USD/NOK
+
+exchange rates.
+
+The exchange rates are aggregated to monthly averages for use as potential exogenous variables in reservoir forecasting.
 
 ## Analysis Methods
 
-### Precipitation Outliers
+The project includes:
 
-Average precipitation is analysed using a Discrete Cosine Transform
-high-pass filter.
+- DCT-based seasonal adjustment
+- Statistical Process Control (SPC)
+- Local Outlier Factor (LOF)
+- STL decomposition
+- spectrogram analysis
+- sliding-window correlation
+- River SNARIMAX forecasting
 
-The seasonally adjusted variation is used together with robust
-Statistical Process Control boundaries to identify outliers.
+### Reservoir Forecasting
 
-The DCT frequency cut-off and number of standard deviations are
-configurable parameters.
+Reservoir filling level is forecast at monthly resolution.
 
-### Temperature Anomalies
+Weekly reservoir observations are converted to month-end values, while ERA5 weather variables and Norges Bank exchange rates are aggregated to monthly resolution.
 
-Temperature anomalies are detected using the
-**Local Outlier Factor (LOF)** method.
+The SNARIMAX model can use:
 
-The expected proportion of anomalies is configurable and defaults to 1%.
+- historical reservoir filling
+- temperature
+- precipitation
+- snowfall
+- EUR/NOK
+- USD/NOK
 
-### STL Decomposition
+as predictors.
 
-Reservoir filling-level data are decomposed using
-**Seasonal-Trend decomposition using LOESS (STL)**.
+Future weather variables use historical calendar-month averages, while future exchange rates use the latest observed value. These are treated as scenario assumptions rather than separate forecasts.
 
-The application allows the user to control:
-
-- seasonal smoother
-- trend smoother
-- robust fitting
-
-### Spectrogram
-
-A spectrogram is used to analyse how the frequency content of reservoir
-filling-level data changes over time.
-
-The window length and overlap are configurable.
-
-## Data Pipelines
-
-### Reservoir data
-
-```text
-NVE Magasinstatistikk API
-        ↓
-Pandas
-        ↓
-Analysis / Streamlit
-```
-
-### Weather data
-
-```text
-NVE shapefiles
-        ↓
-GeoPandas
-        ↓
-Sampled geographical locations
-        ↓
-Open-Meteo ERA5 API
-        ↓
-DCT / SPC / LOF
-        ↓
-Streamlit
-```
-
-### Cross-border electricity data
-
-```text
-ENTSO-E Transparency Platform API
-        ↓
-Cassandra
-        ↓
-Apache Spark
-        ↓
-MongoDB Atlas
-        ↓
-Streamlit
-```
+Raw SNARIMAX predictions are retained, while displayed reservoir filling forecasts are clipped to the physically valid interval `[0, 1]`.
 
 ## Project Structure
 
@@ -169,26 +133,34 @@ ind320-project/
 ├── data/
 │   ├── reservoirs.csv
 │   └── shapefiles/
-│       ├── elspot/
-│       └── nve_regions/
+│
 ├── modules/
 │   ├── area_selector.py
+│   ├── correlation_analysis.py
+│   ├── currency_loader.py
 │   ├── data_loader.py
+│   ├── forecasting.py
+│   ├── map_utils.py
 │   ├── mongodb_loader.py
 │   ├── seasonal_analysis.py
 │   └── weather_analysis.py
+│
 ├── notebooks/
 │   ├── compulsory_1.ipynb
 │   ├── compulsory_2.ipynb
-│   └── compulsory_3.ipynb
+│   ├── compulsory_3.ipynb
+│   └── compulsory_4.ipynb
+│
 ├── pages/
 │   ├── 01_Home.py
-│   ├── 02_Data.py
-│   ├── 03_Plots.py
+│   ├── 02_Map_Overview.py
 │   ├── 04_Cross_Border.py
 │   ├── 05_Seasonal_Analysis.py
+│   ├── 06_Correlation.py
 │   ├── 06_Weather_Analysis.py
+│   ├── 07_Forecast.py
 │   └── 07_About.py
+│
 ├── main.py
 ├── pyproject.toml
 ├── uv.lock
@@ -224,31 +196,18 @@ Start JupyterLab:
 uv run jupyter lab
 ```
 
-## Jupyter Notebook
+## Compulsory Assignment 4 Notebook
 
-The notebook for Compulsory Assignment 3 is located at:
+The final notebook is located at:
 
 ```text
-notebooks/compulsory_3.ipynb
+notebooks/compulsory_4.ipynb
 ```
 
-It documents:
-
-- NVE geographical shapefiles
-- random geographical sampling
-- Open-Meteo ERA5 retrieval
-- precipitation DCT/SPC analysis
-- temperature LOF analysis
-- STL decomposition
-- spectrogram analysis
-- Streamlit implementation
-- AI usage
-- project work log
+It documents the Norges Bank API integration, timezone investigation, forecasting data preparation, SNARIMAX modelling and testing, sliding-window correlation analysis, Streamlit redesign, AI usage and project work log.
 
 ## Security
 
-API tokens, database credentials and connection strings are not stored
-in the GitHub repository.
+API tokens, database credentials and connection strings are not stored in the GitHub repository.
 
-Local credentials are handled using environment variables, while
-Streamlit Community Cloud uses Streamlit Secrets where required.
+Local credentials are handled through environment variables, while Streamlit Community Cloud uses Streamlit Secrets where required.
