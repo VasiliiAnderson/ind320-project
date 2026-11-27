@@ -198,10 +198,12 @@ def get_monthly_flow(
 
     df = pd.DataFrame(rows)
 
-    # Ensure timestamps use a Pandas datetime type before plotting.
+    # Parse ENTSO-E timestamps explicitly as UTC to avoid
+    # ambiguity related to CET/CEST and daylight-saving time.
     if not df.empty:
         df["timestamp_utc"] = pd.to_datetime(
-            df["timestamp_utc"]
+            df["timestamp_utc"],
+            utc=True,
         )
 
     return df

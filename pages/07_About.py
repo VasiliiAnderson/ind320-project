@@ -5,92 +5,182 @@ st.title("About the Project")
 
 st.write(
     """
-    This application has been developed progressively through the
-    compulsory assignments in IND320 – Data to Decision at NMBU.
+    This application was developed as part of
+    **IND320 – Data to Decision at NMBU**.
 
-    Compulsory Assignment 3 extends the existing energy dashboard
-    with geographical sampling, ERA5 weather data and additional
-    time-series analysis methods.
+    The project demonstrates how multiple energy, weather and
+    financial data sources can be integrated, analysed and presented
+    through an interactive decision-support dashboard.
     """
 )
+
+
+# ---------------------------------------------------------
+# Purpose
+# ---------------------------------------------------------
 
 st.subheader("Purpose")
 
 st.write(
     """
-    The purpose of the application is to demonstrate how data from
-    several external sources can be retrieved, processed, analysed
-    and presented through an interactive Streamlit application.
+    The main purpose of the dashboard is to explore how Norwegian
+    reservoir conditions develop over time and how they relate to
+    weather conditions, electricity markets and selected financial
+    variables.
 
-    The dashboard allows users to explore Norwegian reservoir
-    conditions, seasonal patterns, weather-related outliers and
-    anomalies, and cross-border electricity flows.
+    The application follows the workflow:
+
+    **Explore → Analyse → Predict**
     """
 )
+
+
+# ---------------------------------------------------------
+# Data sources
+# ---------------------------------------------------------
 
 st.subheader("Data Sources")
 
-st.write(
+st.markdown(
     """
-    The project uses the following data sources:
+    - **NVE Magasinstatistikk API**  
+      Weekly Norwegian reservoir filling levels, capacity and
+      stored energy.
 
-    - **NVE Magasinstatistikk API** – Norwegian reservoir statistics,
-      including filling levels, storage capacity and stored energy.
-    - **Open-Meteo Historical Weather API** – hourly ERA5 reanalysis
-      data for temperature, precipitation and snowfall.
-    - **NVE geographical shapefiles** – electricity bidding areas
-      and NVE regions used for geographical weather sampling.
-    - **ENTSO-E Transparency Platform API** – physical cross-border
-      electricity flow data between Norwegian bidding zones and
-      neighbouring countries.
+    - **Open-Meteo Historical Weather API**  
+      ERA5 temperature, precipitation and snowfall observations.
+
+    - **NVE geographical shapefiles**  
+      Used to define electricity price areas and water regions
+      and to sample geographical weather locations.
+
+    - **ENTSO-E Transparency Platform**  
+      Physical cross-border electricity-flow observations.
+
+    - **Norges Bank API**  
+      Daily EUR/NOK and USD/NOK spot exchange rates.
     """
 )
+
+
+# ---------------------------------------------------------
+# Analysis methods
+# ---------------------------------------------------------
 
 st.subheader("Analysis Methods")
 
-st.write(
+st.markdown(
     """
-    Compulsory Assignment 3 introduces several additional analysis methods:
+    The dashboard uses several time-series and machine-learning methods:
 
-    - **DCT high-pass filtering and Statistical Process Control (SPC)**
-      for identifying precipitation outliers.
-    - **Local Outlier Factor (LOF)** for detecting temperature anomalies.
-    - **Seasonal-Trend decomposition using LOESS (STL)** for separating
-      reservoir filling levels into trend, seasonal and residual components.
-    - **Spectrogram analysis** for examining how frequency patterns in
-      reservoir filling levels change over time.
+    - **STL decomposition** for separating reservoir filling levels
+      into trend, seasonal and residual components.
+    - **Spectrogram analysis** for studying how frequency patterns
+      change over time.
+    - **Discrete Cosine Transform (DCT)** and **Statistical Process
+      Control (SPC)** for identifying unusual weather observations.
+    - **Local Outlier Factor (LOF)** for anomaly detection.
+    - **Sliding-window correlation** with selectable lag and window
+      length for investigating weather–reservoir relationships.
+    - **River SNARIMAX** for monthly reservoir forecasting with
+      optional exogenous weather and currency variables.
     """
 )
+
+
+# ---------------------------------------------------------
+# Application structure
+# ---------------------------------------------------------
 
 st.subheader("Application Structure")
 
-st.write(
+st.markdown(
     """
-    The application contains seven pages:
+    ### Explore
+    - **Map & Data Overview**
+    - **Energy & Markets**
 
-    - **Home** – introduction and navigation
-    - **Reservoir Data** – reservoir observations and sparklines
-    - **Reservoir Plots** – interactive reservoir visualisations
-    - **Seasonal Analysis** – STL decomposition and spectrogram analysis
-    - **Weather Analysis** – precipitation/SPC and temperature/LOF analysis
-    - **Cross-Border Flows** – import and export analysis based on
-      ENTSO-E data stored in MongoDB
-    - **About** – information about the project, data sources and methods
+    ### Analyse
+    - **Seasonal Patterns**
+    - **Weather & Anomalies**
+    - **Weather–Reservoir Correlation**
+
+    ### Predict
+    - **Reservoir Forecast**
+
+    ### Information
+    - **About**
     """
 )
 
-st.subheader("Technology")
+
+# ---------------------------------------------------------
+# Forecasting
+# ---------------------------------------------------------
+
+st.subheader("Forecasting")
 
 st.write(
     """
-    The project uses Python together with Pandas, GeoPandas,
-    Matplotlib, SciPy, scikit-learn, statsmodels and Streamlit.
+    Reservoir forecasts are produced at monthly resolution using
+    River's SNARIMAX model.
 
-    NVE shapefiles are processed using GeoPandas, while historical
-    weather data are retrieved through Open-Meteo.
+    Users can configure the training history, forecast horizon,
+    model parameters and exogenous variables.
 
-    Apache Spark and Cassandra are used in the cross-border electricity
-    data pipeline, while MongoDB Atlas provides remote storage for the
-    processed ENTSO-E observations used by Streamlit.
+    Since actual future weather and exchange rates are unknown,
+    historical monthly weather averages and the latest observed
+    currency rates are used as transparent future assumptions.
+
+    Raw model predictions are retained, while displayed reservoir
+    filling forecasts are constrained to the physically valid
+    interval between 0 and 1.
+    """
+)
+
+
+# ---------------------------------------------------------
+# Performance and robustness
+# ---------------------------------------------------------
+
+st.subheader("Performance and Robustness")
+
+st.markdown(
+    """
+    Several measures are used to improve the user experience:
+
+    - Streamlit caching reduces repeated API and database calls.
+    - Loading indicators are shown during computationally expensive
+      operations.
+    - External API and database errors are handled gracefully.
+    - ERA5 availability is checked before weather requests are made.
+    - Smaller representative geographical samples are used where
+      appropriate to reduce API usage.
+    """
+)
+
+
+# ---------------------------------------------------------
+# Technology
+# ---------------------------------------------------------
+
+st.subheader("Technology")
+
+st.markdown(
+    """
+    The project uses:
+
+    - Python
+    - Pandas
+    - GeoPandas
+    - Plotly
+    - Streamlit
+    - SciPy
+    - scikit-learn
+    - statsmodels
+    - River
+    - MongoDB Atlas
+    - Apache Spark
+    - Cassandra
     """
 )

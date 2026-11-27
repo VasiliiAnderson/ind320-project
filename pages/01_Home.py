@@ -5,44 +5,125 @@ st.title("IND320 Energy Dashboard")
 
 st.write(
     """
-    This application was developed as part of IND320 – Data to Decision
-    at NMBU. The project combines Norwegian reservoir statistics,
-    cross-border electricity flow data and historical ERA5 weather data
-    in an interactive Streamlit dashboard.
+    An interactive dashboard for exploring, analysing and forecasting
+    Norwegian reservoir conditions using data from NVE, ERA5,
+    ENTSO-E and Norges Bank.
     """
 )
 
-st.subheader("Navigation")
+
+# ---------------------------------------------------------
+# Main workflow
+# ---------------------------------------------------------
+
+st.subheader("Explore → Analyse → Predict")
+
+col1, col2, col3 = st.columns(3)
+
+
+with col1:
+    st.markdown(
+        """
+        ### 🗺️ Explore
+
+        Explore geographical reservoir conditions,
+        weather patterns, electricity flows and
+        exchange rates.
+
+        **Pages**
+        - Map & Data Overview
+        - Energy & Markets
+        """
+    )
+
+
+with col2:
+    st.markdown(
+        """
+        ### 📊 Analyse
+
+        Investigate seasonal behaviour, anomalies and
+        relationships between weather and reservoir
+        filling.
+
+        **Pages**
+        - Seasonal Patterns
+        - Weather & Anomalies
+        - Weather–Reservoir Correlation
+        """
+    )
+
+
+with col3:
+    st.markdown(
+        """
+        ### 🔮 Predict
+
+        Forecast future reservoir filling levels using
+        River SNARIMAX models with optional weather and
+        currency variables.
+
+        **Page**
+        - Reservoir Forecast
+        """
+    )
+
+
+# ---------------------------------------------------------
+# Shared geographical selection
+# ---------------------------------------------------------
+
+st.subheader("Shared Area Selection")
 
 st.write(
     """
-    Use the sidebar to navigate between:
+    The geographical selection made on the **Map & Data Overview**
+    page is stored using Streamlit session state and reused across
+    relevant analysis and forecasting pages.
 
-    - **Home** – introduction to the application
-    - **Reservoir Data** – explore reservoir statistics retrieved from the NVE API
-    - **Reservoir Plots** – visualise reservoir measurements across geographical areas and time periods
-    - **Seasonal Analysis** – analyse reservoir filling levels using STL decomposition and a spectrogram
-    - **Weather Analysis** – analyse ERA5 precipitation outliers and temperature anomalies
-    - **Cross-Border Flows** – analyse electricity imports and exports using ENTSO-E data stored in MongoDB
-    - **About** – information about the project, data sources and technology
+    This allows the dashboard to behave as one connected application
+    rather than a collection of independent pages.
     """
 )
+
+
+# ---------------------------------------------------------
+# Data sources
+# ---------------------------------------------------------
 
 st.subheader("Data Sources")
 
-st.write(
+st.markdown(
     """
-    Reservoir statistics are retrieved directly from the
-    **NVE Magasinstatistikk API**.
+    - **NVE Magasinstatistikk API** – reservoir filling levels,
+      capacity and stored energy.
+    - **Open-Meteo Historical Weather API / ERA5** – temperature,
+      precipitation and snowfall.
+    - **NVE geographical shapefiles** – electricity price areas
+      and Norwegian water regions.
+    - **ENTSO-E Transparency Platform** – cross-border electricity flows.
+    - **Norges Bank API** – EUR/NOK and USD/NOK exchange rates.
+    """
+)
 
-    Historical temperature, precipitation and snowfall data are
-    retrieved from the **Open-Meteo Historical Weather API** using
-    the ERA5 reanalysis model. NVE geographical shapefiles are used
-    to define the relevant Norwegian regions and sample weather
-    locations.
 
-    Cross-border physical flow data are retrieved from the
-    **ENTSO-E Transparency Platform API**, processed using Cassandra
-    and Spark, and stored in MongoDB Atlas for use in the application.
+# ---------------------------------------------------------
+# Key functionality
+# ---------------------------------------------------------
+
+st.subheader("Dashboard Features")
+
+st.markdown(
+    """
+    The dashboard includes:
+
+    - interactive GeoJSON maps
+    - interactive Plotly visualisations
+    - STL decomposition and spectrogram analysis
+    - SATV/SPC and Local Outlier Factor anomaly detection
+    - sliding-window weather–reservoir correlations
+    - River SNARIMAX reservoir forecasting
+    - selectable forecasting parameters and exogenous variables
+    - caching, loading indicators and error handling
     """
 )
