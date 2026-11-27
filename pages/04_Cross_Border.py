@@ -2,7 +2,6 @@ import calendar
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import requests
 import streamlit as st
 
@@ -214,7 +213,7 @@ with left_col:
 
 
 # ---------------------------------------------------------
-# Monthly physical-flow chart
+# Physical-flow chart
 # ---------------------------------------------------------
 
 with right_col:
@@ -248,88 +247,51 @@ with right_col:
 
         else:
 
-            flow_fig = go.Figure()
-
-            directions = (
-                monthly_flow[
+            # Aggregate the high-frequency ENTSO-E
+            # observations to daily mean values.
+            # This makes longer periods easier to read
+            # while preserving the overall flow pattern.
+            daily_flow = (
+                monthly_flow
+                .set_index(
+                    "timestamp_utc"
+                )
+                .groupby(
                     "direction"
+                )[
+                    "quantity_mw"
                 ]
-                .dropna()
-                .unique()
+                .resample("D")
+                .mean()
+                .reset_index()
             )
 
-            for direction in directions:
 
-                direction_data = (
-                    monthly_flow[
-                        monthly_flow[
-                            "direction"
-                        ]
-                        == direction
-                    ]
-                )
-
-                first_trace = True
-
-                for month in (
-                    selected_months
-                ):
-
-                    month_data = (
-                        direction_data[
-                            direction_data[
-                                "timestamp_utc"
-                            ].dt.month
-                            == month
-                        ]
-                        .sort_values(
-                            "timestamp_utc"
-                        )
-                    )
-
-                    if (
-                        month_data.empty
-                    ):
-                        continue
-
-                    flow_fig.add_trace(
-                        go.Scatter(
-                            x=month_data[
-                                "timestamp_utc"
-                            ],
-                            y=month_data[
-                                "quantity_mw"
-                            ],
-                            mode="lines",
-                            name=direction,
-                            legendgroup=direction,
-                            showlegend=(
-                                first_trace
-                            ),
-                            hovertemplate=(
-                                "%{x|%Y-%m-%d %H:%M}"
-                                "<br>"
-                                "%{y:,.0f} MW"
-                                "<extra>"
-                                + direction
-                                + "</extra>"
-                            ),
-                        )
-                    )
-
-                    first_trace = False
-
-            flow_fig.update_layout(
+            flow_fig = px.line(
+                daily_flow,
+                x="timestamp_utc",
+                y="quantity_mw",
+                color="direction",
+                labels={
+                    "timestamp_utc": (
+                        "Date (UTC)"
+                    ),
+                    "quantity_mw": (
+                        "Daily Average "
+                        "Physical Flow (MW)"
+                    ),
+                    "direction": (
+                        "Direction"
+                    ),
+                },
                 title=(
                     f"{selected_connection} – "
                     f"{selected_year}"
                 ),
-                xaxis_title=(
-                    "Timestamp (UTC)"
-                ),
-                yaxis_title=(
-                    "Physical Flow (MW)"
-                ),
+            )
+
+
+            flow_fig.update_layout(
                 hovermode="x unified",
                 margin=dict(
                     l=20,
@@ -342,9 +304,27 @@ with right_col:
                 ),
             )
 
+
+            flow_fig.update_traces(
+                hovertemplate=(
+                    "%{x|%Y-%m-%d}"
+                    "<br>"
+                    "%{y:,.0f} MW"
+                    "<extra></extra>"
+                ),
+            )
+
+
             st.plotly_chart(
                 flow_fig,
                 width="stretch",
+            )
+
+
+            st.caption(
+                "High-frequency ENTSO-E observations "
+                "are aggregated to daily mean values "
+                "for clearer visualisation."
             )
 
 
@@ -469,6 +449,7 @@ if not exchange_rates.empty:
         ),
     )
 
+
     currency_fig.update_layout(
         hovermode="x unified",
         margin=dict(
@@ -481,6 +462,7 @@ if not exchange_rates.empty:
             "Currency"
         ),
     )
+
 
     st.plotly_chart(
         currency_fig,
@@ -596,6 +578,11 @@ with st.expander(
 
         Timestamps are parsed explicitly as UTC to avoid
         ambiguity related to daylight-saving time.
+
+        The original ENTSO-E observations have a high temporal
+        resolution. For the physical-flow visualisation, these
+        observations are aggregated to daily mean values to make
+        longer time periods easier to interpret.
 
         **Norges Bank**
 

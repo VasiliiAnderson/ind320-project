@@ -41,6 +41,7 @@ area_type_labels = {
     "NO": "Norway",
 }
 
+
 available_types = [
     area_type
     for area_type in [
@@ -82,7 +83,7 @@ selected_area_type = st.radio(
 
 
 # Reset selected area when
-# the geographical type changes
+# the geographical type changes.
 if (
     selected_area_type
     != st.session_state[
@@ -163,64 +164,6 @@ selected_area = (
 
 
 # ---------------------------------------------------------
-# Time interval
-# ---------------------------------------------------------
-
-month_options = (
-    area_data["month"]
-    .drop_duplicates()
-    .sort_values()
-    .tolist()
-)
-
-
-default_start = max(
-    0,
-    len(month_options) - 12,
-)
-
-
-start_month, end_month = (
-    st.select_slider(
-        "Time period",
-        options=month_options,
-        value=(
-            month_options[
-                default_start
-            ],
-            month_options[-1],
-        ),
-    )
-)
-
-
-# Save period globally
-st.session_state[
-    "selected_start_month"
-] = start_month
-
-st.session_state[
-    "selected_end_month"
-] = end_month
-
-
-# ---------------------------------------------------------
-# Filter reservoir observations
-# ---------------------------------------------------------
-
-period_data = area_data[
-    (
-        area_data["month"]
-        >= start_month
-    )
-    & (
-        area_data["month"]
-        <= end_month
-    )
-].copy()
-
-
-# ---------------------------------------------------------
 # Map metric
 # ---------------------------------------------------------
 
@@ -290,6 +233,130 @@ weather_metrics = {
     "total_precipitation",
     "total_snowfall",
 }
+
+
+# ---------------------------------------------------------
+# Time interval
+# ---------------------------------------------------------
+
+month_options = (
+    area_data["month"]
+    .drop_duplicates()
+    .sort_values()
+    .tolist()
+)
+
+
+# Weather overlays can only use months
+# for which ERA5 observations are available.
+if (
+    selected_metric
+    in weather_metrics
+):
+
+    latest_weather_month = (
+        latest_era5_date()
+        .to_period("M")
+        .strftime("%Y-%m")
+    )
+
+    available_month_options = [
+        month
+        for month in month_options
+        if month
+        <= latest_weather_month
+    ]
+
+else:
+
+    available_month_options = (
+        month_options
+    )
+
+
+default_start = max(
+    0,
+    len(
+        available_month_options
+    )
+    - 12,
+)
+
+
+start_month, end_month = (
+    st.select_slider(
+        "Time period",
+        options=(
+            available_month_options
+        ),
+        value=(
+            available_month_options[
+                default_start
+            ],
+            available_month_options[
+                -1
+            ],
+        ),
+    )
+)
+
+
+# Avoid excessively large Open-Meteo
+# requests for weather overlays.
+if (
+    selected_metric
+    in weather_metrics
+):
+
+    weather_months = (
+        pd.Period(
+            end_month,
+            freq="M",
+        )
+        - pd.Period(
+            start_month,
+            freq="M",
+        )
+    ).n + 1
+
+
+    if weather_months > 24:
+
+        st.warning(
+            "Weather overlays are limited "
+            "to a maximum period of 24 months "
+            "to reduce Open-Meteo API usage "
+            "and loading time. Please select "
+            "a shorter period."
+        )
+
+        st.stop()
+
+
+# Save period globally.
+st.session_state[
+    "selected_start_month"
+] = start_month
+
+st.session_state[
+    "selected_end_month"
+] = end_month
+
+
+# ---------------------------------------------------------
+# Filter reservoir observations
+# ---------------------------------------------------------
+
+period_data = area_data[
+    (
+        area_data["month"]
+        >= start_month
+    )
+    & (
+        area_data["month"]
+        <= end_month
+    )
+].copy()
 
 
 # ---------------------------------------------------------
@@ -366,6 +433,9 @@ if (
     )
 
 
+    # The latest ERA5 month may only
+    # contain observations for part
+    # of the month.
     if (
         requested_end_date
         > available_end_date
@@ -415,12 +485,14 @@ if (
             )
 
         except requests.exceptions.RequestException:
+
             st.error(
                 "Weather data could not be "
                 "retrieved from Open-Meteo. "
                 "Try a shorter period or try "
                 "again later."
             )
+
             st.stop()
 
 

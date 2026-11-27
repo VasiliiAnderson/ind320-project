@@ -309,6 +309,144 @@ def download_weather(
 
     return hourly_average
 
+# ---------------------------------------------------------
+# Daily weather download
+# ---------------------------------------------------------
+
+@st.cache_data(ttl=3600)
+def download_daily_weather(
+    area_type,
+    area_number,
+    start_date,
+    end_date,
+    n_locations=5,
+    random_state=42,
+):
+    """
+    Download daily ERA5 weather observations for
+    correlation analysis.
+
+    Multiple geographical locations are retrieved in
+    one Open-Meteo request to reduce API usage.
+    """
+
+    locations = load_weather_coordinates(
+        area_type=area_type,
+        area_number=area_number,
+        n_points=1000,
+        random_state=random_state,
+    )
+
+    selected_points = locations.sample(
+        n=min(
+            n_locations,
+            len(locations),
+        ),
+        random_state=random_state,
+    )
+
+    # Send all selected coordinates in one API request.
+    latitudes = ",".join(
+        selected_points[
+            "latitude"
+        ].astype(str)
+    )
+
+    longitudes = ",".join(
+        selected_points[
+            "longitude"
+        ].astype(str)
+    )
+
+    params = {
+        "latitude": latitudes,
+        "longitude": longitudes,
+        "start_date": start_date,
+        "end_date": end_date,
+        "daily": (
+            "temperature_2m_mean,"
+            "precipitation_sum,"
+            "snowfall_sum"
+        ),
+        "models": "era5",
+        "timezone": "UTC",
+    }
+
+    response = requests.get(
+        ARCHIVE_URL,
+        params=params,
+        timeout=120,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    # Multiple coordinates return a list of
+    # location-specific response objects.
+    if isinstance(data, dict):
+        data = [data]
+
+    weather_frames = []
+
+    for location_id, location_data in enumerate(
+        data
+    ):
+
+        daily = pd.DataFrame(
+            location_data["daily"]
+        )
+
+        daily["time"] = pd.to_datetime(
+            daily["time"],
+            utc=True,
+        )
+
+        daily["location_id"] = (
+            location_id
+        )
+
+        weather_frames.append(
+            daily
+        )
+
+    if not weather_frames:
+
+        raise ValueError(
+            "No ERA5 weather observations "
+            "were returned."
+        )
+
+    weather = pd.concat(
+        weather_frames,
+        ignore_index=True,
+    )
+
+    # Average weather conditions across
+    # the sampled geographical locations.
+    daily_average = (
+        weather
+        .groupby(
+            "time",
+            as_index=False,
+        )
+        .agg(
+            avg_temperature=(
+                "temperature_2m_mean",
+                "mean",
+            ),
+            avg_precipitation=(
+                "precipitation_sum",
+                "mean",
+            ),
+            avg_snowfall=(
+                "snowfall_sum",
+                "mean",
+            ),
+        )
+    )
+
+    return daily_average
 
 # ---------------------------------------------------------
 # Latest safe ERA5 date

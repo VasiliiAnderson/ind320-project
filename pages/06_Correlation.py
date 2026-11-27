@@ -1,4 +1,5 @@
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 
 from modules.area_selector import (
@@ -12,7 +13,7 @@ from modules.data_loader import (
     load_data,
 )
 from modules.weather_analysis import (
-    download_weather,
+    download_daily_weather,
 )
 
 
@@ -58,7 +59,10 @@ start_year, end_year = st.select_slider(
     options=list(
         range(2020, 2025)
     ),
-    value=(2020, 2024),
+    value=(
+        2020,
+        2024,
+    ),
 )
 
 
@@ -79,13 +83,46 @@ with st.spinner(
     "Loading ERA5 weather data..."
 ):
 
-    weather = download_weather(
-        area_type=selected_area_type,
-        area_number=selected_area,
-        start_date=start_date,
-        end_date=end_date,
-        n_locations=10,
-    )
+    try:
+
+        # Daily ERA5 data are sufficient here because
+        # the correlation analysis is later aggregated
+        # to monthly resolution.
+        weather = (
+            download_daily_weather(
+                area_type=(
+                    selected_area_type
+                ),
+                area_number=(
+                    selected_area
+                ),
+                start_date=(
+                    start_date
+                ),
+                end_date=(
+                    end_date
+                ),
+                n_locations=5,
+            )
+        )
+
+    except requests.exceptions.RequestException:
+
+        st.error(
+            "Weather data could not be retrieved "
+            "from Open-Meteo. Please try again later "
+            "or select a shorter analysis period."
+        )
+
+        st.stop()
+
+    except ValueError as exc:
+
+        st.warning(
+            str(exc)
+        )
+
+        st.stop()
 
 
 # ---------------------------------------------------------
@@ -163,6 +200,7 @@ selected_weather = (
         selected_weather_label
     ]
 )
+
 
 selected_reservoir = (
     reservoir_options[
@@ -251,6 +289,7 @@ mean_correlation = (
     ].mean()
 )
 
+
 mean_absolute_correlation = (
     correlation_result[
         "correlation"
@@ -259,6 +298,7 @@ mean_absolute_correlation = (
     .mean()
 )
 
+
 strongest_date = (
     correlation_result[
         "correlation"
@@ -266,6 +306,7 @@ strongest_date = (
     .abs()
     .idxmax()
 )
+
 
 strongest_correlation = (
     correlation_result.loc[
@@ -335,7 +376,6 @@ fig.add_trace(
 )
 
 
-# Zero reference line
 fig.add_hline(
     y=0,
     line_dash="dash",
@@ -441,8 +481,13 @@ with st.expander(
 
     st.markdown(
         """
-        Weather observations are aggregated to monthly
-        resolution before being joined with reservoir data.
+        Weather observations are downloaded from ERA5 at
+        daily resolution and subsequently aggregated to
+        monthly resolution for the correlation analysis.
+
+        A reproducible sample of five geographical locations
+        is used to represent weather conditions in the selected
+        region while limiting Open-Meteo API usage.
 
         Reservoir filling uses the final available observation
         from each month. Monthly filling change is calculated
@@ -457,5 +502,8 @@ with st.expander(
         observations are included in each correlation estimate.
         Short windows can capture changing relationships more
         quickly but are also more sensitive to noise.
+
+        Correlation represents statistical association and
+        should not be interpreted as evidence of causality.
         """
     )

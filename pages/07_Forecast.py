@@ -1,6 +1,7 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 
 from modules.area_selector import (
@@ -36,6 +37,7 @@ st.write(
 # ---------------------------------------------------------
 
 df = load_data()
+
 
 selected_area_type, selected_area = (
     area_selector(df)
@@ -110,6 +112,7 @@ if sync_with_map:
         map_end_month
     )
 
+
     st.caption(
         f"Training end is synchronised with "
         f"the map: {requested_end_month}."
@@ -135,7 +138,9 @@ else:
 # Main forecast controls
 # ---------------------------------------------------------
 
-col1, col2 = st.columns(2)
+col1, col2 = (
+    st.columns(2)
+)
 
 
 with col1:
@@ -231,6 +236,7 @@ with st.expander(
             step=1,
         )
 
+
         sp = st.number_input(
             "sp – Seasonal AR order",
             min_value=0,
@@ -250,6 +256,7 @@ with st.expander(
             step=1,
         )
 
+
         sd = st.number_input(
             "sd – Seasonal differencing",
             min_value=0,
@@ -268,6 +275,7 @@ with st.expander(
             value=1,
             step=1,
         )
+
 
         sq = st.number_input(
             "sq – Seasonal MA order",
@@ -331,9 +339,11 @@ if any(
         latest_era5_date()
     )
 
+
     era5_period = (
         era5_date.to_period("M")
     )
+
 
     # If the safe ERA5 date is not the final
     # day of the month, use the previous month.
@@ -341,9 +351,11 @@ if any(
         era5_date.day
         < era5_period.days_in_month
     ):
+
         era5_period = (
             era5_period - 1
         )
+
 
     effective_end_period = min(
         effective_end_period,
@@ -430,6 +442,75 @@ with st.spinner(
             )
         )
 
+
+    except requests.exceptions.HTTPError as exc:
+
+        response = (
+            exc.response
+        )
+
+
+        response_url = (
+            response.url
+            if response is not None
+            else ""
+        )
+
+
+        status_code = (
+            response.status_code
+            if response is not None
+            else None
+        )
+
+
+        if (
+            status_code == 429
+            and "open-meteo.com"
+            in response_url
+        ):
+
+            st.error(
+                "The Open-Meteo daily API request limit "
+                "has been reached. Please try again later "
+                "or on the following day."
+            )
+
+        else:
+
+            st.error(
+                "An external data source could not be "
+                "retrieved while preparing the forecast."
+            )
+
+
+        st.stop()
+
+
+    except requests.exceptions.RequestException:
+
+        st.error(
+            "An external data source could not be "
+            "reached while preparing the forecast. "
+            "Please try again later."
+        )
+
+        st.stop()
+
+
+    except ValueError as exc:
+
+        st.error(
+            "Forecasting data could not be prepared."
+        )
+
+        st.code(
+            str(exc)
+        )
+
+        st.stop()
+
+
     except Exception as exc:
 
         st.error(
@@ -476,6 +557,7 @@ with st.spinner(
             sd=int(sd),
             sq=int(sq),
         )
+
 
     except Exception as exc:
 
@@ -603,6 +685,7 @@ forecast_x = [
 ] + list(
     future_forecast.index
 )
+
 
 forecast_y = [
     history_plot.iloc[-1]
@@ -780,6 +863,7 @@ if selected_features:
             "recent observed value."
         )
 
+
         st.dataframe(
             future_forecast[
                 selected_features
@@ -804,6 +888,7 @@ with st.expander(
         ]
     )
 
+
     st.dataframe(
         future_forecast[
             columns
@@ -827,6 +912,11 @@ with st.expander(
 
         The model can include temperature, precipitation,
         snowfall, EUR/NOK and USD/NOK as exogenous variables.
+
+        Historical weather observations are retrieved at daily
+        resolution from ERA5 and aggregated to monthly values.
+        Multiple sampled geographical locations are retrieved in
+        a single Open-Meteo request to reduce API usage.
 
         Since actual future exogenous observations are not
         available, weather variables use historical monthly

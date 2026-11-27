@@ -1,7 +1,4 @@
-import time
-
 import pandas as pd
-import requests
 import streamlit as st
 
 from river import time_series
@@ -10,13 +7,8 @@ from modules.currency_loader import (
     download_exchange_rates,
 )
 from modules.weather_analysis import (
+    download_daily_weather,
     latest_era5_date,
-    load_weather_coordinates,
-)
-
-
-ARCHIVE_URL = (
-    "https://archive-api.open-meteo.com/v1/archive"
 )
 
 
@@ -46,11 +38,12 @@ def download_monthly_weather(
     random_state=42,
 ):
     """
-    Download daily ERA5 weather and aggregate it
-    to monthly observations.
+    Download daily ERA5 weather observations and aggregate
+    them to monthly values for forecasting.
 
-    Daily data are used here instead of hourly data
-    to reduce API usage in the Streamlit application.
+    The underlying daily-weather function retrieves multiple
+    geographical locations in a single Open-Meteo request to
+    reduce API usage.
     """
 
     start_date = pd.Timestamp(
@@ -67,123 +60,41 @@ def download_monthly_weather(
     )
 
     if start_date > safe_end:
+
         raise ValueError(
             "The selected forecast training period "
             "is newer than the available ERA5 data."
         )
 
-    locations = (
-        load_weather_coordinates(
+
+    daily_weather = (
+        download_daily_weather(
             area_type=area_type,
             area_number=area_number,
-            n_points=1000,
-            random_state=random_state,
-        )
-    )
-
-    selected_points = (
-        locations.sample(
-            n=min(
-                n_locations,
-                len(locations),
-            ),
-            random_state=random_state,
-        )
-    )
-
-    frames = []
-
-    for location_id, (_, point) in enumerate(
-        selected_points.iterrows()
-    ):
-
-        params = {
-            "latitude": point["latitude"],
-            "longitude": point["longitude"],
-            "start_date": (
+            start_date=(
                 start_date.strftime(
                     "%Y-%m-%d"
                 )
             ),
-            "end_date": (
+            end_date=(
                 safe_end.strftime(
                     "%Y-%m-%d"
                 )
             ),
-            "daily": (
-                "temperature_2m_mean,"
-                "precipitation_sum,"
-                "snowfall_sum"
-            ),
-            "models": "era5",
-            "timezone": "UTC",
-        }
-
-        response = requests.get(
-            ARCHIVE_URL,
-            params=params,
-            timeout=120,
+            n_locations=n_locations,
+            random_state=random_state,
         )
-
-        if not response.ok:
-            raise requests.exceptions.HTTPError(
-                (
-                    f"Open-Meteo returned "
-                    f"{response.status_code}: "
-                    f"{response.text}"
-                ),
-                response=response,
-            )
-
-        data = response.json()
-
-        daily = pd.DataFrame(
-            data["daily"]
-        )
-
-        daily["date"] = pd.to_datetime(
-            daily["time"]
-        )
-
-        daily["location_id"] = (
-            location_id
-        )
-
-        frames.append(
-            daily
-        )
-
-        time.sleep(0.2)
-
-    weather = pd.concat(
-        frames,
-        ignore_index=True,
     )
 
-    # First calculate the regional daily average.
+
     regional_daily = (
-        weather
-        .groupby(
-            "date",
-            as_index=True,
-        )
-        .agg(
-            avg_temperature=(
-                "temperature_2m_mean",
-                "mean",
-            ),
-            avg_precipitation=(
-                "precipitation_sum",
-                "mean",
-            ),
-            avg_snowfall=(
-                "snowfall_sum",
-                "mean",
-            ),
-        )
+        daily_weather
+        .set_index("time")
+        .sort_index()
     )
 
-    # Then aggregate regional weather to months.
+
+    # Aggregate daily regional weather to months.
     monthly = (
         regional_daily
         .resample("ME")
@@ -202,6 +113,20 @@ def download_monthly_weather(
             ),
         )
     )
+
+
+    # Reservoir and currency data use timezone-naive
+    # month-end indexes.
+    if (
+        monthly.index.tz
+        is not None
+    ):
+
+        monthly.index = (
+            monthly.index
+            .tz_localize(None)
+        )
+
 
     return monthly
 
@@ -228,6 +153,7 @@ def prepare_forecast_data(
         selected_features
     )
 
+
     # -----------------------------------------------------
     # Reservoir target
     # -----------------------------------------------------
@@ -253,6 +179,7 @@ def prepare_forecast_data(
         .copy()
     )
 
+
     reservoir_monthly = (
         reservoir
         .set_index("date")[
@@ -264,7 +191,11 @@ def prepare_forecast_data(
         .to_frame()
     )
 
-    data = reservoir_monthly.copy()
+
+    data = (
+        reservoir_monthly.copy()
+    )
+
 
     # -----------------------------------------------------
     # Weather features
@@ -275,6 +206,7 @@ def prepare_forecast_data(
         for feature in selected_features
         if feature in WEATHER_FEATURES
     ]
+
 
     if weather_features:
 
@@ -290,10 +222,12 @@ def prepare_forecast_data(
             )
         )
 
+
         data = data.join(
             weather_monthly,
             how="inner",
         )
+
 
     # -----------------------------------------------------
     # Currency features
@@ -304,6 +238,7 @@ def prepare_forecast_data(
         for feature in selected_features
         if feature in CURRENCY_FEATURES
     ]
+
 
     if currency_features:
 
@@ -316,19 +251,22 @@ def prepare_forecast_data(
                 start_date=(
                     pd.Timestamp(
                         start_date
-                    ).strftime(
+                    )
+                    .strftime(
                         "%Y-%m-%d"
                     )
                 ),
                 end_date=(
                     pd.Timestamp(
                         end_date
-                    ).strftime(
+                    )
+                    .strftime(
                         "%Y-%m-%d"
                     )
                 ),
             )
         )
+
 
         currency_wide = (
             exchange_rates
@@ -345,21 +283,25 @@ def prepare_forecast_data(
             )
         )
 
+
         currency_monthly = (
             currency_wide
             .resample("ME")
             .mean()
         )
 
+
         data = data.join(
             currency_monthly,
             how="inner",
         )
 
+
     required_columns = (
         ["fill_level"]
         + selected_features
     )
+
 
     data = (
         data[
@@ -368,6 +310,7 @@ def prepare_forecast_data(
         .dropna()
         .sort_index()
     )
+
 
     return data
 
@@ -395,9 +338,11 @@ def create_future_features(
         selected_features
     )
 
+
     future = pd.DataFrame(
         index=future_dates
     )
+
 
     for feature in selected_features:
 
@@ -413,11 +358,13 @@ def create_future_features(
                 .mean()
             )
 
+
             overall_mean = (
                 training_data[
                     feature
                 ].mean()
             )
+
 
             future[feature] = [
                 climatology.get(
@@ -428,6 +375,7 @@ def create_future_features(
                 in future_dates
             ]
 
+
         elif feature in CURRENCY_FEATURES:
 
             future[feature] = (
@@ -437,6 +385,7 @@ def create_future_features(
                 .dropna()
                 .iloc[-1]
             )
+
 
     return future
 
@@ -467,10 +416,12 @@ def forecast_future_snarimax(
         selected_features
     )
 
+
     required_columns = (
         ["fill_level"]
         + selected_features
     )
+
 
     model_data = (
         data[
@@ -481,9 +432,11 @@ def forecast_future_snarimax(
         .copy()
     )
 
+
     history_months = (
         history_years * 12
     )
+
 
     training_data = (
         model_data.tail(
@@ -491,11 +444,14 @@ def forecast_future_snarimax(
         )
     )
 
+
     if len(training_data) < 24:
+
         raise ValueError(
             "At least 24 monthly observations "
             "are required for forecasting."
         )
+
 
     model = time_series.SNARIMAX(
         p=p,
@@ -506,6 +462,7 @@ def forecast_future_snarimax(
         sd=sd,
         sq=sq,
     )
+
 
     # Sequential online training.
     for _, row in (
@@ -520,12 +477,14 @@ def forecast_future_snarimax(
             else None
         )
 
+
         model.learn_one(
             y=row[
                 "fill_level"
             ],
             x=x,
         )
+
 
     # -----------------------------------------------------
     # Future dates
@@ -540,6 +499,7 @@ def forecast_future_snarimax(
         freq="ME",
     )
 
+
     # -----------------------------------------------------
     # Future exogenous values
     # -----------------------------------------------------
@@ -553,6 +513,7 @@ def forecast_future_snarimax(
             ),
         )
     )
+
 
     if selected_features:
 
@@ -569,18 +530,22 @@ def forecast_future_snarimax(
 
         future_x = None
 
+
     predictions = model.forecast(
         horizon=horizon_months,
         xs=future_x,
     )
 
+
     forecast = (
         future_features.copy()
     )
 
+
     forecast[
         "predicted_fill_level_raw"
     ] = predictions
+
 
     # Reservoir filling is physically bounded.
     forecast[
@@ -594,6 +559,7 @@ def forecast_future_snarimax(
             upper=1,
         )
     )
+
 
     return (
         forecast,
